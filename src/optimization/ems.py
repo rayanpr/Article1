@@ -55,10 +55,6 @@ def solve_ems(net: np.ndarray, price: np.ndarray, batt: BatterySpec, export_rati
     }
 
 
-def clairvoyant_cost(net: np.ndarray, price: np.ndarray, batt: BatterySpec, export_ratio: float = 0.5) -> float:
-    return float(solve_ems(net, price, batt, export_ratio)["cost"])
-
-
 def evaluate_schedule(
     schedule: np.ndarray, net: np.ndarray, price: np.ndarray, batt: BatterySpec, export_ratio: float = 0.5
 ) -> float:
@@ -70,7 +66,7 @@ def evaluate_schedule(
     for t in range(h):
         dis = max(0.0, min(batt.p_dis, schedule[t]))
         ch = max(0.0, min(batt.p_ch, -schedule[t]))
-        room_ch = (batt.e_max - soc[t]) * batt.eta_ch
+        room_ch = (batt.e_max - soc[t]) / batt.eta_ch
         room_dis = (soc[t] - batt.e_min * batt.e_max) * batt.eta_dis
         dis = min(dis, room_dis)
         ch = min(ch, room_ch)

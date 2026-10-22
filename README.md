@@ -27,12 +27,11 @@ Article1/
 │   │   ├── tft.py            # TFT quantile (VSN GRN + LSTM + têtes de quantiles)
 │   │   ├── copula.py         # Scénarios multivariés — copule gaussienne
 │   │   └── metrics.py        # Pinball, CRPS, couverture, conformal prediction
-│   ├── optimization/         # EMS, SPO+, cvxpylayers, TSRO/C&CG
-│   │   ├── ems.py            # LP EMS (dispatch batterie) — HiGHS
-│   │   ├── spo.py            # SPO+ loss + gradient analytique (autograd)
-│   │   ├── tsro.py           # TSRO C&CG (pire-cas boîte, règles de dispatch)
-│   │   └── differentiable.py # Couche cvxpylayers (voir .venv311)
-│   └── utils/
+│   └── optimization/         # EMS, SPO+, cvxpylayers, TSRO/C&CG
+│       ├── ems.py            # LP EMS (dispatch batterie) — HiGHS
+│       ├── spo.py            # SPO+ loss + gradient analytique (autograd)
+│       ├── tsro.py           # TSRO C&CG (pire-cas boîte, règles de dispatch)
+│       └── differentiable.py # Couche cvxpylayers (voir .venv311)
 ├── docs/
 │   └── formulations_mathematiques.md  # LP/QP/MILP, TSRO, CRPS, SPO+, cvxpylayers (LaTeX)
 ├── scripts/
@@ -43,11 +42,10 @@ Article1/
 │   ├── step3_preprocess.py   # Étape 3 : nettoyage, sin/cos, splits, figures EDA
 │   ├── train_evaluate.py     # Étapes 5–6 : entraînement TFT+SPO+, baselines, évaluation
 │   └── step7_report.py       # Étape 7 : figures comparatives + rapport structuré
-├── notebooks/
-├── models/                   # Checkpoints entraînés
-├── results/                  # Résultats d'expériences
-├── figures/
-├── tests/
+├── models/                   # Checkpoints entraînés (.pt)
+├── results/                  # Résultats d'expériences (JSON, .npy, rapport)
+├── figures/                  # Figures EDA + comparatives (PNG)
+├── tests/                    # Tests (pytest)
 └── requirements.txt
 ```
 

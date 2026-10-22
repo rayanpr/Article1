@@ -10,13 +10,6 @@ def pinball_loss(y: np.ndarray, q: np.ndarray, taus: np.ndarray) -> float:
     return float(np.mean(np.maximum(taus * e, (taus - 1.0) * e)))
 
 
-def pinball_loss_torch(y, q, taus):
-    import torch
-
-    e = y - q
-    return torch.mean(torch.maximum(taus * e, (taus - 1.0) * e))
-
-
 def crps_from_quantiles(
     y: np.ndarray, q: np.ndarray, taus: np.ndarray = DEFAULT_TAUS
 ) -> float:

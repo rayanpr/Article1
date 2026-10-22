@@ -88,27 +88,6 @@ def plot_split_timeline(df: pd.DataFrame, masks: dict) -> None:
     plt.close(fig)
 
 
-def plot_predictions(path_true: Path, path_pred: Path) -> None:
-    y_true = np.load(path_true)
-    y_pred = np.load(path_pred)
-    days = min(5, y_true.shape[0] // 24)
-    fig, axes = plt.subplots(days, 1, figsize=(12, 2.2 * days), sharex=True)
-    axes = np.atleast_1d(axes)
-    for d in range(days):
-        ax = axes[d]
-        sl = slice(d * 24, (d + 1) * 24)
-        ax.plot(y_true[sl, 0], "k-", label="net réalisé")
-        ax.fill_between(range(24), y_pred[sl, 0, 0], y_pred[sl, 0, -1], alpha=0.3, color="steelblue")
-        ax.plot(y_pred[sl, 0, 2], "b--", label="médiane")
-        ax.set_ylabel("kWh")
-        if d == 0:
-            ax.legend(loc="upper right", fontsize=8)
-            ax.set_title("Prévisions probabilistes net (bande 10–90%)")
-    fig.tight_layout()
-    fig.savefig(FIGURES_DIR / "forecast_fan_chart.png", dpi=150)
-    plt.close(fig)
-
-
 def main() -> dict:
     FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -122,7 +101,7 @@ def main() -> dict:
     df_std = df.copy()
     df_std[TARGET_COLS] = sc.transform(df[TARGET_COLS])
 
-    xs, ys, idx, _ = build_supervised(df_std, lookback=24, horizon=24)
+    xs, ys, idx = build_supervised(df_std, lookback=24, horizon=24)
     arr = split_arrays(xs, ys, idx, masks)
     np.savez_compressed(
         PROCESSED_DIR / "arrays_2022.npz",

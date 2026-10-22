@@ -52,22 +52,19 @@ class Standardizer:
     def inverse(self, arr: np.ndarray) -> np.ndarray:
         return arr * self.std_ + self.mean_
 
-    def inverse_target(self, arr: np.ndarray) -> np.ndarray:
-        return arr * self.std_ + self.mean_
-
 
 def build_supervised(
     df: pd.DataFrame, lookback: int = 24, horizon: int = 24
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     feat_cols = TARGET_COLS + KNOWN_COLS
     x = df[feat_cols].to_numpy(dtype=np.float32)
     y = df[TARGET_COLS].to_numpy(dtype=np.float32)
-    xs, ys, ys_raw_idx = [], [], []
+    xs, ys, idx = [], [], []
     for t in range(lookback, len(df) - horizon + 1):
         xs.append(x[t - lookback : t])
         ys.append(y[t : t + horizon])
-        ys_raw_idx.append(t)
-    return np.stack(xs), np.stack(ys), np.array(ys_raw_idx), np.array(ys_raw_idx)
+        idx.append(t)
+    return np.stack(xs), np.stack(ys), np.array(idx)
 
 
 def split_arrays(

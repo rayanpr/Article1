@@ -22,7 +22,7 @@ from src.forecasting.metrics import (
 )
 from src.forecasting.tft import TFTQuantile
 from src.optimization.ems import BatterySpec, evaluate_schedule, solve_ems
-from src.optimization.spo import spo_plus_loss, spo_plus_loss_torch
+from src.optimization.spo import spo_plus_loss_torch
 
 SEED = 42
 H = 24

@@ -26,11 +26,16 @@ osqp>=0.6
 
 # ─── Deep learning & forecasting ─────────────────────────────────────────────
 torch>=2.2
+torchaudio>=2.2
 pytorch-forecasting>=1.0
 pytorch-lightning>=2.0
 
 # ─── Decision-focused learning ───────────────────────────────────────────────
 pyepo>=0.3.6
+
+# ─── Baselines ML ────────────────────────────────────────────────────────────
+xgboost>=2.0
+lightgbm>=4.0
 
 # ─── Benchmark environment ───────────────────────────────────────────────────
 citylearn>=3.0.2
