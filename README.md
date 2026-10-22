@@ -20,14 +20,29 @@ Article1/
 │   │   └── meteorology/      # Irradiance/météo (NREL NSRDB, ENTSO-E solaire)
 │   └── processed/            # Jeux de données prêts pour l'entraînement
 ├── src/
-│   ├── data/                 # Pipeline de téléchargement/génération
+│   ├── data/                 # Pipeline de téléchargement/génération + loaders
+│   │   └── loaders.py        # Chargement datasets (processed/CityLearn/IEEE/synthétiques)
 │   ├── forecasting/          # TFT / prévision probabiliste
+│   │   ├── preprocessing.py  # Features sin/cos, splits, standardisation, supervised
+│   │   ├── tft.py            # TFT quantile (VSN GRN + LSTM + têtes de quantiles)
+│   │   ├── copula.py         # Scénarios multivariés — copule gaussienne
+│   │   └── metrics.py        # Pinball, CRPS, couverture, conformal prediction
 │   ├── optimization/         # EMS, SPO+, cvxpylayers, TSRO/C&CG
+│   │   ├── ems.py            # LP EMS (dispatch batterie) — HiGHS
+│   │   ├── spo.py            # SPO+ loss + gradient analytique (autograd)
+│   │   ├── tsro.py           # TSRO C&CG (pire-cas boîte, règles de dispatch)
+│   │   └── differentiable.py # Couche cvxpylayers (voir .venv311)
 │   └── utils/
+├── docs/
+│   └── formulations_mathematiques.md  # LP/QP/MILP, TSRO, CRPS, SPO+, cvxpylayers (LaTeX)
 ├── scripts/
 │   ├── download_all.py       # Orchestrateur : tous les datasets
+│   ├── build_dataset.py      # Assemblage de data/processed/ à partir des sources présentes
 │   ├── verify_install.py     # Vérification de l'environnement
-│   └── check_data.py         # Contrôle d'intégrité des CSV
+│   ├── check_data.py         # Contrôle d'intégrité des CSV
+│   ├── step3_preprocess.py   # Étape 3 : nettoyage, sin/cos, splits, figures EDA
+│   ├── train_evaluate.py     # Étapes 5–6 : entraînement TFT+SPO+, baselines, évaluation
+│   └── step7_report.py       # Étape 7 : figures comparatives + rapport structuré
 ├── notebooks/
 ├── models/                   # Checkpoints entraînés
 ├── results/                  # Résultats d'expériences
@@ -55,7 +70,42 @@ python scripts\download_all.py
 # 4. Vérification environnement + données
 python scripts\verify_install.py
 python scripts\check_data.py
+
+# 5. Jeu de données d'entraînement (data/processed/) — sans clé API
+python scripts\build_dataset.py
 ```
+
+## Pipeline ML (workflow complet, sans clé API)
+
+```powershell
+# Étape 3 : nettoyage, features sin/cos, splits, figures EDA
+python scripts\step3_preprocess.py
+
+# Étapes 5–6 : entraînement TFT (pinball → pinball+SPO+), baselines, évaluation
+python scripts\train_evaluate.py
+
+# Étape 7 : figures comparatives + rapport structuré
+python scripts\step7_report.py
+```
+
+- **Modèle** : TFT quantile (29 k paramètres) — phase 1 pinball (12 époques) puis phase 2 pinball + λ·SPO+ (6 époques, λ=0.3), seed=42, ~2 min CPU.
+- **SPO+** : gradient analytique `2(x*(ĉ) − x*(2ĉ − c))` via `torch.autograd.Function` (LP SciPy/HiGHS batch).
+- **Baselines** : persistence, LightGBM quantile, XGBoost quantile, TFT pinball-only, conformal, clairvoyant (oracle).
+- **Sorties** : `models/tft_*.pt`, `results/experiment_results.json`, `results/rapport_workflow.md`, `figures/`.
+- **Formulations mathématiques** (LP/QP/MILP, TSRO C&CG, CRPS, SPO+, cvxpylayers) : `docs/formulations_mathematiques.md`.
+
+### Résultats de référence (test nov–déc 2022, 241 fenêtres de 24 h)
+
+| Méthode | CRPS net (std) | Regret vs oracle |
+|---|---|---|
+| Persistence | 1.178 | 16.3 % |
+| LightGBM | **0.167** | 3.2 % |
+| XGBoost | 0.194 | **2.7 %** |
+| TFT pinball | 0.189 | 3.9 % |
+| TFT+SPO+ | 0.208 | 4.3 % |
+
+Clairvoyant (perfect foresight) : 54.08 €/24 h. TSRO C&CG converge en 2 scénarios (nominal 49 € → pire-cas +63 %).
+Détails et recommandations : `results/rapport_workflow.md`.
 
 ## Datasets
 
@@ -65,9 +115,10 @@ python scripts\check_data.py
 | IEEE 69-bus | MATPOWER `case69.m` | non | ✅ importé (69 bus, 68 lignes, 3802.1 **kW** — convention case69) |
 | Profils synthétiques PV/charge/prix | généré localement | non | ✅ 8760 h × 11 colonnes |
 | OPSD France horaire | open-power-system-data.org | non | ✅ FR 2020 (6575 h × 4) — couverture source 2015–2020, cache complet 89 Mo |
-| NREL NSRDB (irradiance) | developer.nrel.gov | `NREL_API_KEY` | ⏸ en attente de clé |
-| ENTSO-E (prix/charge/solaire) | transparency.entsoe.eu | `ENTSOE_API_KEY` | ⏸ en attente de clé |
+| NREL NSRDB (irradiance) | developer.nrel.gov | `NREL_API_KEY` | ⏸ non utilisé (pas de clé) — irradiance via profils PV synthétiques + CityLearn |
+| ENTSO-E (prix/charge/solaire) | transparency.entsoe.eu | `ENTSOE_API_KEY` | ⏸ non utilisé (pas de clé) — prix via CityLearn + profil synthétique |
 | CityLearn v3 | package `citylearn` 3.0.2 | non | ✅ 17 bâtiments, 8759 h, export charge/PV/net/stockage/prix/KPIs |
+| **Jeu traité 2022** | `scripts/build_dataset.py` | non | ✅ `data/processed/dataset_2022.csv` : 8760 h × 7 colonnes (load/pv/price réels + synthétiques + net) |
 
 ### Conventions CityLearn v3 (important)
 

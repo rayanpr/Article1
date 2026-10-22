@@ -28,5 +28,20 @@ checks.append(("CityLearn pv", pv.shape, f"max={pv.max().max():.2f} kWh"))
 pr = pd.read_csv("data/raw/citylearn/prices.csv", index_col=0, parse_dates=True)
 checks.append(("CityLearn prices", pr.shape, f"mean={pr['electricity_pricing'].mean():.3f}"))
 
+from pathlib import Path
+
+processed = Path("data/processed/dataset_2022.csv")
+if processed.exists():
+    ds = pd.read_csv(processed, index_col=0, parse_dates=True)
+    checks.append(
+        (
+            "Processed 2022",
+            ds.shape,
+            f"NaN={int(ds.isna().sum().sum())} | net_mean={ds['net_kwh'].mean():.1f} kWh",
+        )
+    )
+else:
+    checks.append(("Processed 2022", "-", "ABSENT -> python scripts/build_dataset.py"))
+
 for name, shape, info in checks:
     print(f"{name:<22} {str(shape):<15} {info}")
