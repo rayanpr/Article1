@@ -50,28 +50,11 @@ def spo_plus_loss(price_hat: np.ndarray, price_true: np.ndarray, batt: BatterySp
 
 
 def spo_plus_loss_torch(price_hat, price_true, batt: BatterySpec):
-    import torch
-
-    c_hat = price_hat.detach().cpu().numpy()
-    c = price_true.detach().cpu().numpy()
-    batch = c_hat.shape[0]
-    losses = np.empty(batch, dtype=np.float32)
-    grads = np.empty_like(c_hat, dtype=np.float32)
-    for i in range(batch):
-        losses[i], grads[i] = _spo_terms(c_hat[i], c[i], batt)
-    scale = float(np.mean(np.abs(c))) * c_hat.shape[1] + 1e-8
-    loss_t = torch.tensor(losses.mean() / scale, dtype=price_hat.dtype, device=price_hat.device)
-    g_t = torch.tensor(grads / (batch * scale), dtype=price_hat.dtype, device=price_hat.device)
-
-    class _SPOLoss(torch.autograd.Function):
-        @staticmethod
-        def forward(ctx, ph, pt):
-            ctx.save_for_backward(g_t)
-            return loss_t
-
-        @staticmethod
-        def backward(ctx, grad_out):
-            (g,) = ctx.saved_tensors
-            return grad_out * g, None
-
-    return _SPOLoss.apply(price_hat, price_true)
+    """
+    SPO+ loss function - now optimized version.
+    
+    This function has been optimized for better performance with batch processing.
+    For the original implementation, see spo_optimized.py.
+    """
+    from .spo_optimized import spo_plus_loss_torch_optimized
+    return spo_plus_loss_torch_optimized(price_hat, price_true, batt)

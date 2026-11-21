@@ -31,7 +31,7 @@ Article1/
 │       ├── ems.py            # LP EMS (dispatch batterie) — HiGHS
 │       ├── spo.py            # SPO+ loss + gradient analytique (autograd)
 │       ├── tsro.py           # TSRO C&CG (pire-cas boîte, règles de dispatch)
-│       └── differentiable.py # Couche cvxpylayers (voir .venv311)
+│       └── differentiable.py # Couche cvxpylayers + perte SPO+ exacte (voir .venv311)
 ├── docs/
 │   └── formulations_mathematiques.md  # LP/QP/MILP, TSRO, CRPS, SPO+, cvxpylayers (LaTeX)
 ├── scripts/
@@ -41,6 +41,7 @@ Article1/
 │   ├── check_data.py         # Contrôle d'intégrité des CSV
 │   ├── step3_preprocess.py   # Étape 3 : nettoyage, sin/cos, splits, figures EDA
 │   ├── train_evaluate.py     # Étapes 5–6 : entraînement TFT+SPO+, baselines, évaluation
+│   ├── train_spo_exact.py    # Phase 3 : couplage SPO+ exact cvxpylayers (.venv311)
 │   └── step7_report.py       # Étape 7 : figures comparatives + rapport structuré
 ├── models/                   # Checkpoints entraînés (.pt)
 ├── results/                  # Résultats d'expériences (JSON, .npy, rapport)
@@ -82,25 +83,30 @@ python scripts\step3_preprocess.py
 # Étapes 5–6 : entraînement TFT (pinball → pinball+SPO+), baselines, évaluation
 python scripts\train_evaluate.py
 
+# Étape 6bis : couplage SPO+ exact sur le LP EMS (env .venv311, ~11 min CPU)
+.venv311\Scripts\python scripts\train_spo_exact.py
+
 # Étape 7 : figures comparatives + rapport structuré
 python scripts\step7_report.py
 ```
 
-- **Modèle** : TFT quantile (29 k paramètres) — phase 1 pinball (12 époques) puis phase 2 pinball + λ·SPO+ (6 époques, λ=0.3), seed=42, ~2 min CPU.
-- **SPO+** : gradient analytique `2(x*(ĉ) − x*(2ĉ − c))` via `torch.autograd.Function` (LP SciPy/HiGHS batch).
+- **Modèle** : TFT quantile (92,6 k paramètres) — phase 1 pinball (12 époques) puis phase 2 pinball + λ·SPO+ (6 époques, λ=0.3), seed=42, ~2 min CPU.
+- **SPO+ boîte** : gradient analytique `2(x*(ĉ) − x*(2ĉ − c))` via `torch.autograd.Function` (LP SciPy/HiGHS batch).
+- **SPO+ exact** (`train_spo_exact.py`, env `.venv311`) : LP EMS différenciable via cvxpylayers/diffcp (ECOS), loss = pinball + λ·(SPO+ à deux solves + terme de recours sous vraies séries), grille λ ∈ {0.05, 0.1, 0.3}, *early stopping* sur le regret val — checkpoint `models/tft_spo_exact.pt`.
 - **Baselines** : persistence, LightGBM quantile, XGBoost quantile, TFT pinball-only, conformal, clairvoyant (oracle).
-- **Sorties** : `models/tft_*.pt`, `results/experiment_results.json`, `results/rapport_workflow.md`, `figures/`.
-- **Formulations mathématiques** (LP/QP/MILP, TSRO C&CG, CRPS, SPO+, cvxpylayers) : `docs/formulations_mathematiques.md`.
+- **Sorties** : `models/tft_*.pt`, `results/experiment_results.json`, `results/spo_exact_results.json`, `results/rapport_workflow.md`, `figures/`.
+- **Formulations mathématiques** (LP/QP/MILP, TSRO, CRPS, SPO+, cvxpylayers) : `docs/formulations_mathematiques.md`.
 
 ### Résultats de référence (test nov–déc 2022, 241 fenêtres de 24 h)
 
 | Méthode | CRPS net (std) | Regret vs oracle |
 |---|---|---|
 | Persistence | 1.178 | 16.3 % |
-| LightGBM | **0.167** | 3.2 % |
-| XGBoost | 0.194 | **2.7 %** |
-| TFT pinball | 0.189 | 3.9 % |
-| TFT+SPO+ | 0.208 | 4.3 % |
+| LightGBM | **0.167** | 3.1 % |
+| XGBoost | 0.194 | **2.6 %** |
+| TFT pinball | 0.189 | 3.8 % |
+| **TFT+SPO+ exact (cvxpylayers)** | 0.176 | **2.8 %** |
+| TFT+SPO+ (boîte) | 0.208 | 4.2 % |
 
 Clairvoyant (perfect foresight) : 54.08 €/24 h. TSRO C&CG converge en 2 scénarios (nominal 49 € → pire-cas +63 %).
 Détails et recommandations : `results/rapport_workflow.md`.
@@ -130,6 +136,7 @@ Détails et recommandations : `results/rapport_workflow.md`.
 | Élément | Détail | Solution |
 |---|---|---|
 | `cvxpylayers` / `diffcp` | build C++ requis (CMake : `CMAKE_CXX_COMPILER not set`) | Installer *Visual Studio Build Tools* (workload C++), puis `pip install diffcp cvxpylayers` — **ou** utiliser Python 3.11 (wheels diffcp disponibles) |
+| Environnement `.venv311` validé | `_diffcp` compilé numpy 1.x **plante en access violation sous numpy 2.x** | Python 3.11 + `numpy==1.26.4` (`<2`), `cvxpy==1.6.7`, `cvxpylayers==1.1.0` (`pip install --no-deps cvxpylayers`), `diffcp==1.0.22`, `torch` CPU ; solveur de la couche : **ECOS** (diffcp ne supporte qu'ECOS/SCS) |
 | CityLearn pins | `citylearn 3.0.2` exige `numpy<2` et `scikit-learn<=1.2.2` (pas de wheels py3.12) | Installé en `--no-deps` avec numpy 2.x + sklearn 1.9 — fonctionnel sur les tests |
 | OPSD 2022 | le jeu `time_series` public s'arrête en 09/2020 | Fallback automatique 2020 + cache local ; pour 2022 utiliser ENTSO-E (clé API) |
 | Gurobi | licence requise | Fallback : HiGHS/ECOS/SCS/OSQP/CLARABEL déjà installés |

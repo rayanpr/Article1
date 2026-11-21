@@ -128,7 +128,7 @@ def plot_fan_chart() -> None:
 
 def write_report(res: dict) -> None:
     m = res["metrics"]
-    order = ["persistence", "lightgbm", "xgboost", "tft_pinball", "tft_pinball_spo", "tft_conf"]
+    order = ["persistence", "lightgbm", "xgboost", "tft_pinball", "tft_spo_exact", "tft_pinball_spo", "tft_conf"]
     rows = []
     for k in order:
         if k not in m:
@@ -148,10 +148,10 @@ Workflow complet exécuté sur `dataset_2022.csv` (8760 h, CityLearn v3 17 bâti
 Splits : train 6552 h (jan–sep) / val 744 h (oct) / test 1464 h (nov–déc). Horizon de prévision 24 h, lookback 24 h.
 Batterie : E=100 kWh, P=±30 kW, η=0.95, socle 10 %, export à β=0.5×prix d'achat.
 
-Reproductibilité : `scripts/step3_preprocess.py` → `scripts/train_evaluate.py` (seed=42, torch + SciPy/HiGHS).
-Entraînement : TFT (VSN GRN + LSTM + têtes de quantiles, 29 048 paramètres) —
+Reproductibilité : `scripts/step3_preprocess.py` → `scripts/train_evaluate.py` (seed=42, torch + SciPy/HiGHS) → `scripts/train_spo_exact.py` (couplage exact cvxpylayers, env `.venv311`, graine rechargée depuis `tft_pinball.pt`).
+Entraînement : TFT (VSN GRN + LSTM + têtes de quantiles, 92 600 paramètres) —
 phase 1 pinball (12 époques, lr 1e-3) puis phase 2 pinball + λ·SPO+ (6 époques, lr 3e-4, λ={res['lambda_spo']}),
-temps total {res['train_time_s']} s (CPU).
+temps total {res['train_time_s']} s (CPU) ; couplage exact : 3 λ × ≤6 époques, {res.get('spo_exact', {}).get('train_time_s', '—')} s.
 
 ## 2. Résultats prévisionnels (test 2022, unités standardisées)
 
@@ -172,26 +172,26 @@ Métriques clés :
 
 ## 4. Analyse
 
-1. **Gradient boosting > TFT petit** : LightGBM/XGBoost sur les features lag + sin/cos surpassent le TFT (29 k paramètres) en CRPS net — classique sur un seul site sans grosse saisonnalité apprise ; le TFT rattrape sur la calibration (couverture 84 % vs 78 % LightGBM).
-2. **Effet SPO+** : la phase 2 réduit la perte de décision mais λ=0.3 fixe introduit un biais ; le regret TFT+SPO+ ({m['tft_pinball_spo']['operational']['regret_pct']:.2f} %) reste supérieur à XGBoost ({m['xgboost']['operational']['regret_pct']:.2f} %) — à retravailler (λ, nombre d'époques phase 2, couplage SPO+ sur le net via cvxpylayers dans `.venv311`).
+1. **Gradient boosting > TFT en CRPS** : LightGBM/XGBoost sur les features lag + sin/cos surpassent le TFT en CRPS net — classique sur un seul site sans grosse saisonnalité apprise ; le TFT rattrape sur la calibration (couverture 84 % vs 78 % LightGBM) et, en regret, le TFT+SPO exact dépasse LightGBM (voir point 2).
+2. **Effet SPO+** : la relaxation boîte (phase 2, λ=0.3) **dégrade** le regret (TFT+SPO+ {m['tft_pinball_spo']['operational']['regret_pct']:.2f} % vs {m['tft_pinball']['operational']['regret_pct']:.2f} % pour le pinball seul). Le couplage **exact via cvxpylayers** (LP EMS complet net + prix + contraintes batterie, SPO+ à deux solves + terme de recours réévalué sous les vraies séries, λ={res.get('spo_exact', {}).get('lambda', '—')}, early stopping sur le regret val) le fait chuter à **{m['tft_spo_exact']['operational']['regret_pct']:.2f} %** — meilleur que LightGBM ({m['lightgbm']['operational']['regret_pct']:.2f} %) et très proche d'XGBoost ({m['xgboost']['operational']['regret_pct']:.2f} %), avec calibration conservée (pinball val 0,107 ≈ 0,108 au départ). Détails : `results/spo_exact_results.json`.
 3. **Conformal** : la calibration conformiste recentre les intervalles (couverture prix {m['tft_conf']['price']['coverage_80']:.2f} vs {m['tft_pinball_spo']['price']['coverage_80']:.2f}) au prix d'intervalles plus larges — garanti sans hypothèse de distribution.
 4. **Robustesse** : l'écart coût nominal → pire-cas TSRO (+{100*(tsro['worst_case_cost']/tsro['nominal_cost']-1):.0f} %) motive fortement la couche robuste pour la planification journalière.
 
 ## 5. Recommandations pratiques
 
-- **Passer à cvxpylayers** (disponible dans `.venv311`, py3.11 + diffcp wheels) pour un couplage SPO+ exact sur le LP EMS complet plutôt que la relaxation boîte.
+- **cvxpylayers** : **fait** — `scripts/train_spo_exact.py` (env `.venv311`, py3.11) ; regret {m['tft_pinball_spo']['operational']['regret_pct']:.2f} % (boîte) → {m['tft_spo_exact']['operational']['regret_pct']:.2f} % (exact). Extensions : λ > 0.3, β du terme de recours, sous-échantillonnage plus fin de la couche.
 - **Données** : ajouter ENTSO-E/NREL (clés API) pour la vraie saisonnalité 2022 prix + irradiance ; actuellement CityLearn + synthétiques.
-- **Hyperparamètres SPO+** : λ ∈ {{0.05, 0.1, 0.3}}, planificateur croisé λ↔époques phase 2, early stopping sur le regret val (pas le pinball).
+- **Hyperparamètres SPO+** : **fait pour le couplage exact** (grille λ ∈ {{0.05, 0.1, 0.3}} + early stopping sur le regret val, λ=0.3 retenu). Reste : λ plus larges, β recours, planificateur λ↔époques.
 - **Batterie** : tester E ∈ {{50, 100, 200}} kWh pour vérifier la sensibilité du regret à la contrainte d'énergie (le SPO+ y est le plus sensible).
 - **TSRO** : étendre l'incertitude au prix (boîte jointe net × prix) et brancher les scénarios copule comme approximation de l'ensemble d'incertitude.
 
 ## 6. Artefacts
 
-- Modèles : `models/tft_pinball.pt`, `models/tft_spo.pt`
-- Résultats bruts : `results/experiment_results.json`, `results/preprocess_summary.json`
+- Modèles : `models/tft_pinball.pt`, `models/tft_spo.pt`, `models/tft_spo_exact.pt`
+- Résultats bruts : `results/experiment_results.json`, `results/spo_exact_results.json`, `results/preprocess_summary.json`
 - Figures : `figures/` (EDA, training curves, CRPS, regret, calibration, fan chart)
 - Formulations : `docs/formulations_mathematiques.md`
-- Pipeline : `scripts/step3_preprocess.py`, `scripts/train_evaluate.py` (seed 42)
+- Pipeline : `scripts/step3_preprocess.py`, `scripts/train_evaluate.py` (seed 42), `scripts/train_spo_exact.py` (`.venv311`)
 """
     (RESULTS_DIR / "rapport_workflow.md").write_text(report, encoding="utf-8")
     print("Rapport écrit :", RESULTS_DIR / "rapport_workflow.md")

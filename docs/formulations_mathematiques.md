@@ -151,11 +151,12 @@ Implémentation : `spo.spo_plus_loss` (LP SciPy/HiGHS batch) + `spo_plus_loss_to
 
 ## 6. Couche d'optimisation différentielle (cvxpylayers)
 
-Le LP EMS est traduit en couche $\mathbb{R}^{2H} \to \mathbb{R}^{H}$ :
+Le LP EMS est traduit en couche $\mathbb{R}^{2H} \to \mathbb{R}^{5H}$ (sorties $g, x, ch, dis, e$) :
 
 ```python
-net, price = cp.Parameter(H), cp.Parameter(H, nonneg=True)
+net, price = cp.Parameter(H), cp.Parameter(H)   # sans nonneg : 2*p_hat - p contient des négatifs
 # ... variables g, x, c, d, e + contraintes physiques ...
+cons += [g <= 500, x <= 500]                   # bornitude (prix négatifs : LP non borné sinon)
 prob = cp.Problem(cp.Minimize(cost), cons)
 layer = CvxpyLayer(prob, parameters=[net, price], variables=[g, x, c, d, e])
 ```
@@ -168,15 +169,26 @@ $$
 \begin{bmatrix} \nabla_{z\theta}^2 \mathcal{L} \\ \nabla_{\lambda\theta}^2 \mathcal{L} \end{bmatrix}
 $$
 
-Disponible dans `.venv311` (diffcp wheels py3.11). Fallback : SPO+ analytique (Section 5) sans dépendance C++.
+Solveur : **ECOS** uniquement (`diffcp` ne supporte qu'ECOS/SCS). Entraînement via `scripts/train_spo_exact.py` (env `.venv311`, `numpy<2` obligatoire — voir README). Fallback : SPO+ analytique (Section 5) sans dépendance C++.
 
-## 7. Pipeline d'entraînement decision-focused (2 phases)
+### 6.1 Perte SPO+ exacte sur le LP EMS
+
+Deux composantes, normalisées par $\text{scale} = \frac{1}{N}\sum_i\sum_t |p_t n_t| \approx 114{,}1$ :
+
+1. **SPO+ à deux solves** (signal prix) :
+   $\ell = (p - 2\hat p)^{\top}\big(\psi(z_2) - \psi(z_1)\big) \ge 0$, où $z_1 = x^*(\hat n, \hat p)$, $z_2 = x^*(\hat n, 2\hat p - p)$ et $\psi(z) = g - \beta x$. Gradient w.r.t. $\hat p$ : $2(\psi(z_1) - \psi(z_2))$ (terme explicite ; la solution d'un LP est constante par morceaux en coefficients de coût).
+2. **Terme de recours** (signal net exact) : planning $(ch_1, dis_1)$ réévalué sous les vraies séries — $b = n_{\text{true}} + ch_1 - dis_1$, coût $\sum_t p_{\text{true},t}(\mathrm{relu}(b_t) - \beta\,\mathrm{relu}(-b_t))$.
+
+$\mathcal{L} = \mathcal{L}_{pinball} + \lambda\,(\ell_{\text{SPO+}} + \beta\,\ell_{\text{recours}})$, $\beta = 1$, grille $\lambda \in \{0{,}05; 0{,}1; 0{,}3\}$, *early stopping* sur le regret val.
+
+## 7. Pipeline d'entraînement decision-focused (3 phases)
 
 1. **Phase 1 — warm-up forecast-focused** : $\min_\theta \mathcal{L}_{pinball}(\hat q_\theta, y)$.
-2. **Phase 2 — fine-tuning decision-focused** :
+2. **Phase 2 — fine-tuning decision-focused (voie boîte)** :
    $\min_\theta \ \mathcal{L}_{pinball} + \lambda\,\mathcal{L}_{SPO+}(\hat p_\theta, p)$
    ($\lambda$ croissant 0 → 0.5 ; SPO+ sur le prix, proxy du coût d'achat).
-3. **Post-calibration** : conformal sur la validation.
+3. **Phase 3 — couplage exact (`.venv311`)** : reprise de `tft_pinball.pt` avec la perte de la section~6.1 (couche cvxpylayers, SPO+ + recours) ; grille $\lambda \times$ *early stopping* sur le regret val → `tft_spo_exact.pt`.
+4. **Post-calibration** : conformal sur la validation.
 
 ## 8. Métriques d'évaluation
 

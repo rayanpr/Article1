@@ -68,11 +68,21 @@ def build_supervised(
 
 
 def split_arrays(
-    xs: np.ndarray, ys: np.ndarray, idx: np.ndarray, masks: dict
+    xs: np.ndarray, ys: np.ndarray, idx: np.ndarray, masks: dict, horizon: int = 24
 ) -> dict:
-    m_train = masks["train"][idx]
-    m_val = masks["val"][idx]
-    m_test = masks["test"][idx]
+    # Une fenêtre appartient à un split ssi son origine ET sa dernière cible sont dans le split.
+    # Cela crée automatiquement un embargo de 'horizon' heures entre les sets.
+    def get_safe_mask(m):
+        # m est le masque booléen sur l'index complet (8760,)
+        # idx contient les indices (0..8759) des origines des fenêtres
+        mask_origin = m[idx]
+        mask_end = m[idx + horizon - 1]
+        return mask_origin & mask_end
+
+    m_train = get_safe_mask(masks["train"])
+    m_val = get_safe_mask(masks["val"])
+    m_test = get_safe_mask(masks["test"])
+    
     return {
         "X_train": xs[m_train], "y_train": ys[m_train],
         "X_val": xs[m_val], "y_val": ys[m_val],
