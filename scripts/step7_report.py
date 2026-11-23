@@ -18,7 +18,22 @@ from config.paths import FIGURES_DIR, RESULTS_DIR
 
 
 def load_results() -> dict:
-    return json.loads((RESULTS_DIR / "experiment_results.json").read_text(encoding="utf-8"))
+    """Charge les resultats principaux et complete avec la phase 3 (SPO+ exact)."""
+    res = json.loads((RESULTS_DIR / "experiment_results.json").read_text(encoding="utf-8"))
+    exact_file = RESULTS_DIR / "spo_exact_results.json"
+    if exact_file.exists():
+        exact = json.loads(exact_file.read_text(encoding="utf-8"))
+        res.setdefault("metrics", {})["tft_spo_exact"] = {
+            "net": exact["test"]["net"],
+            "price": exact["test"]["price"],
+            "operational": exact["test"]["operational"],
+        }
+        res["spo_exact"] = {
+            "lambda": exact.get("chosen_lambda"),
+            "train_time_s": exact.get("total_time_s"),
+            "best_val_regret_pct": exact.get("best_val_regret_pct"),
+        }
+    return res
 
 
 def plot_training_curves(log: list) -> None:
@@ -140,6 +155,13 @@ def write_report(res: dict) -> None:
         )
     table = "\n".join(rows)
     tsro = res["tsro_demo"]
+    regret_box = m['tft_pinball_spo']['operational']['regret_pct']
+    regret_pin = m['tft_pinball']['operational']['regret_pct']
+    box_effect = (
+        f"améliore le regret ({regret_box:.2f} % vs {regret_pin:.2f} % pour le pinball seul)"
+        if regret_box <= regret_pin
+        else f"dégrade le regret ({regret_box:.2f} % vs {regret_pin:.2f} % pour le pinball seul)"
+    )
     report = f"""# Rapport d'expérience — Decision-Focused Probabilistic Forecasting for Microgrid EMS
 
 ## 1. Contexte et exécution
@@ -172,16 +194,16 @@ Métriques clés :
 
 ## 4. Analyse
 
-1. **Gradient boosting > TFT en CRPS** : LightGBM/XGBoost sur les features lag + sin/cos surpassent le TFT en CRPS net — classique sur un seul site sans grosse saisonnalité apprise ; le TFT rattrape sur la calibration (couverture 84 % vs 78 % LightGBM) et, en regret, le TFT+SPO exact dépasse LightGBM (voir point 2).
-2. **Effet SPO+** : la relaxation boîte (phase 2, λ=0.3) **dégrade** le regret (TFT+SPO+ {m['tft_pinball_spo']['operational']['regret_pct']:.2f} % vs {m['tft_pinball']['operational']['regret_pct']:.2f} % pour le pinball seul). Le couplage **exact via cvxpylayers** (LP EMS complet net + prix + contraintes batterie, SPO+ à deux solves + terme de recours réévalué sous les vraies séries, λ={res.get('spo_exact', {}).get('lambda', '—')}, early stopping sur le regret val) le fait chuter à **{m['tft_spo_exact']['operational']['regret_pct']:.2f} %** — meilleur que LightGBM ({m['lightgbm']['operational']['regret_pct']:.2f} %) et très proche d'XGBoost ({m['xgboost']['operational']['regret_pct']:.2f} %), avec calibration conservée (pinball val 0,107 ≈ 0,108 au départ). Détails : `results/spo_exact_results.json`.
+1. **Gradient boosting > TFT en CRPS** : LightGBM/XGBoost sur les features lag + sin/cos surpassent le TFT en CRPS net — classique sur un seul site sans grosse saisonnalité apprise ; le TFT rattrape sur la calibration (couverture {m['tft_spo_exact']['net']['coverage_80']*100:.0f} % vs {m['lightgbm']['net']['coverage_80']*100:.0f} % LightGBM) et, en regret, le TFT+SPO exact dépasse LightGBM (voir point 2).
+2. **Effet SPO+** : la relaxation boîte (phase 2, λ=0.3) {box_effect}. Le couplage **exact via cvxpylayers** (LP EMS complet net + prix + contraintes batterie, SPO+ conforme à la Définition 3 d'Elmachtoub & Grigas — trois solves : décision prédite, oracle prix vrai `z_c = x*(n̂,p)`, problème modifié `z₂ = x*(n̂,2p̂−p)` — plus terme de recours réévalué sous les vraies séries, λ={res.get('spo_exact', {}).get('lambda', '—')} retenu par regret de validation, early stopping sur le regret val) le porte à **{m['tft_spo_exact']['operational']['regret_pct']:.2f} %** — à comparer à LightGBM ({m['lightgbm']['operational']['regret_pct']:.2f} %) et XGBoost ({m['xgboost']['operational']['regret_pct']:.2f} %), avec calibration conservée (pinball val {m['tft_spo_exact'].get('price', {}).get('pinball_mean', float('nan')):.3f} ≈ 0,107 au départ). Détails : `results/spo_exact_results.json`.
 3. **Conformal** : la calibration conformiste recentre les intervalles (couverture prix {m['tft_conf']['price']['coverage_80']:.2f} vs {m['tft_pinball_spo']['price']['coverage_80']:.2f}) au prix d'intervalles plus larges — garanti sans hypothèse de distribution.
 4. **Robustesse** : l'écart coût nominal → pire-cas TSRO (+{100*(tsro['worst_case_cost']/tsro['nominal_cost']-1):.0f} %) motive fortement la couche robuste pour la planification journalière.
 
 ## 5. Recommandations pratiques
 
-- **cvxpylayers** : **fait** — `scripts/train_spo_exact.py` (env `.venv311`, py3.11) ; regret {m['tft_pinball_spo']['operational']['regret_pct']:.2f} % (boîte) → {m['tft_spo_exact']['operational']['regret_pct']:.2f} % (exact). Extensions : λ > 0.3, β du terme de recours, sous-échantillonnage plus fin de la couche.
+- **cvxpylayers** : **fait** — `scripts/train_spo_exact.py` (env `.venv311`, py3.11) ; regret {m['tft_pinball_spo']['operational']['regret_pct']:.2f} % (boîte) → {m['tft_spo_exact']['operational']['regret_pct']:.2f} % (exact). Extensions : λ au-delà de la grille explorée, β du terme de recours, sous-échantillonnage plus fin de la couche.
 - **Données** : ajouter ENTSO-E/NREL (clés API) pour la vraie saisonnalité 2022 prix + irradiance ; actuellement CityLearn + synthétiques.
-- **Hyperparamètres SPO+** : **fait pour le couplage exact** (grille λ ∈ {{0.05, 0.1, 0.3}} + early stopping sur le regret val, λ=0.3 retenu). Reste : λ plus larges, β recours, planificateur λ↔époques.
+- **Hyperparamètres SPO+** : **fait pour le couplage exact** (grille λ ∈ {{0.05, 0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0}} + early stopping sur le regret val, λ={res.get('spo_exact', {}).get('lambda', '—')} retenu). Reste : planificateur λ↔époques, sensibilité au terme de recours β.
 - **Batterie** : tester E ∈ {{50, 100, 200}} kWh pour vérifier la sensibilité du regret à la contrainte d'énergie (le SPO+ y est le plus sensible).
 - **TSRO** : étendre l'incertitude au prix (boîte jointe net × prix) et brancher les scénarios copule comme approximation de l'ensemble d'incertitude.
 

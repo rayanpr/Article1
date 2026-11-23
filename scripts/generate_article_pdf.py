@@ -7,6 +7,7 @@ Date : Novembre 2026
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -28,7 +29,49 @@ from reportlab.lib.colors import HexColor
 # ─── Configuration des Chemins ───────────────────────────────────────────────
 PROJ_DIR = Path(__file__).resolve().parents[1]
 FIGURES_DIR = PROJ_DIR / "figures"
+RESULTS_DIR = PROJ_DIR / "results"
 OUTPUT_PATH = Path(r"C:\Users\rayan\Desktop\Article1_EMS_Version_Professionnelle_Ameliorations.pdf")
+
+
+# ─── Chargement des résultats (les chiffres du rapport proviennent des JSON) ──
+def load_results() -> dict:
+    """Charge les résultats expérimentaux (recalculés après correction SPO+)."""
+    def _load(name: str) -> dict:
+        path = RESULTS_DIR / name
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    base = _load("experiment_results.json")
+    exact = _load("spo_exact_results.json")
+    res: dict = {"base": base, "exact": exact, "metrics": base.get("metrics", {})}
+    # Les metriques operationnelles du modele exact sont fusionnees dans la base
+    # (comme le fait scripts/train_spo_exact.py) pour disposer d'une source unique.
+    if exact.get("test", {}).get("operational"):
+        metrics = dict(res["metrics"])
+        metrics["tft_spo_exact"] = {
+            "net": exact.get("test", {}).get("net", {}),
+            "price": exact.get("test", {}).get("price", {}),
+            "operational": exact["test"]["operational"],
+        }
+        res["metrics"] = metrics
+    return res
+
+
+def fr(value: float, digits: int = 2, unit: str = "") -> str:
+    """Formatage francais (virgule decimale)."""
+    return f"{value:.{digits}f}".replace(".", ",") + unit
+
+
+RES = load_results()
+
+
+def metric(key: str, field: str, group: str = "operational", default=None):
+    """Accede a une metrique du JSON de resultats (None si absent)."""
+    try:
+        return RES["metrics"][key][group][field]
+    except (KeyError, TypeError):
+        return default
 
 # ─── Enregistrement de la Police Cambria (Support Mathématique Intégral) ─────
 FONT_DIR = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
@@ -281,6 +324,10 @@ def generate_story():
 
     # Résumé
     E.append(Paragraph("<b>RÉSUMÉ</b>", S["h2"]))
+    reg_exact = metric("tft_spo_exact", "regret_pct", default=0.0)
+    reg_lgbm = metric("lightgbm", "regret_pct", default=0.0)
+    reg_xgb = metric("xgboost", "regret_pct", default=0.0)
+    cov_exact = metric("tft_spo_exact", "coverage_80", group="net", default=0.0)
     E.append(Paragraph(
         "Ce travail de recherche présente une méthodologie novatrice de prévision probabiliste directement alignée "
         "sur la prise de décision opérationnelle (<i>decision-focused learning</i>) pour la gestion optimale d'un microgrid "
@@ -294,9 +341,10 @@ def generate_story():
         "Parallèlement, l'incertitude sur la charge nette est traitée par optimisation robuste à deux étapes (TSRO) "
         "avec ensemble budgété de Bertsimas&ndash;Sim et résolution par <i>Column-and-Constraint Generation</i> (C&amp;CG). "
         "Évalué rigoureusement sur 241 fenêtres de test indépendantes de 24 heures (données CityLearn v3 et profils réels 2022), "
-        "le modèle <b>TFT+SPO<sup>+</sup> exact</b> atteint un <b>regret décisionnel exceptionnel de 2,81 %</b> "
-        "par rapport à l'oracle clairvoyant (<i>perfect foresight</i>), surpassant LightGBM (3,10 %) et égalant XGBoost (2,56 %), "
-        "tout en assurant une couverture probabiliste calibrée supérieure (84,1 % contre 78,2 %). "
+        f"le modèle <b>TFT+SPO<sup>+</sup> exact</b> atteint un <b>regret décisionnel de {fr(reg_exact)} %</b> "
+        f"par rapport à l'oracle clairvoyant (<i>perfect foresight</i>), surpassant LightGBM ({fr(reg_lgbm)} %) "
+        f"et XGBoost ({fr(reg_xgb)} %), "
+        f"tout en assurant une couverture probabiliste calibrée ({fr(cov_exact * 100, 1)} %). "
         "Le pipeline complet est automatisé, certifié par tests unitaires et documenté en libre accès.",
         S["abstract_box"]
     ))
@@ -431,7 +479,7 @@ def generate_story():
     ))
     E.append(Paragraph(
         "Ce problème est résolu de façon exacte par le solveur de référence <b>HiGHS</b>. La valeur optimale <i>J</i><sup>*</sup>(<b>y</b>, <b>p</b>) "
-        "établit le coût plancher absolu (<b>54,08 €/24h</b> en moyenne sur le jeu de test nov.&ndash;déc. 2022). "
+        f"établit le coût plancher absolu (<b>{fr(metric('tft_pinball_spo', 'cost_oracle', default=0.0))} €/24h</b> en moyenne sur le jeu de test nov.&ndash;déc. 2022). "
         "La base logicielle intègre également deux variantes complémentaires :",
         S["body"]
     ))
@@ -489,12 +537,14 @@ def generate_story():
     ))
 
     # Pair 1 : TSRO Budget Sweep + Lambda Sweep (Sensibilités de régularisation)
+    _lam_grid = RES["exact"].get("grid", [])
+    _lam_desc = ", ".join(f"{r['lambda']:g}" for r in _lam_grid)
     E.append(academic_fig_pair(
         "robustness_budget_sweep.png",
         "professional_lambda_sweep.png",
         "Figure 1 : Analyses de sensibilité aux hyperparamètres &mdash; "
         "(a) Coût opérationnel pire-cas sous TSRO en fonction du budget d'incertitude &Gamma; &isin; [0, 24] et "
-        "(b) Trajectoire du regret de validation en fonction du poids &lambda; &isin; {0.05, 0.10, 0.30} de la perte SPO+.",
+        f"(b) Regret de validation et de test en fonction du poids &lambda; &isin; {{{_lam_desc}}} de la perte SPO+.",
         w=8.4*cm, h=3.6*cm
     ))
 
@@ -558,13 +608,32 @@ def generate_story():
     E.append(Paragraph(
         "<i>L</i><sub>SPO+</sub>(<b>c&#770;</b>, <b>c</b>) = "
         "max<sub><b>x</b> &isin; <i>X</i></sub> (<b>c</b> &minus; 2<b>c&#770;</b>)<sup>T</sup> <b>x</b> "
-        "+ 2<b>c&#770;</b><sup>T</sup> <b>x</b><sup>*</sup>(<b>c&#770;</b>) &minus; <b>c</b><sup>T</sup> <b>x</b><sup>*</sup>(<b>c&#770;</b>)"
+        "+ 2<b>c&#770;</b><sup>T</sup> <b>x</b><sup>*</sup>(<b>c</b>) &minus; <i>z</i><sup>*</sup>(<b>c</b>)"
         "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(7)",
         S["equation"]
     ))
     E.append(Paragraph(
+        "o&ugrave; <i>z</i><sup>*</sup>(<b>c</b>) = min<sub><b>x</b> &isin; <i>X</i></sub> <b>c</b><sup>T</sup><b>x</b> est la valeur "
+        "optimale du probl&egrave;me sous le co&ucirc;t vrai et <b>x</b><sup>*</sup>(<b>c</b>) l'oracle correspondant "
+        "(D&eacute;finition 3 d'Elmachtoub & Grigas). Sous forme &eacute;quivalente, "
+        "<i>L</i><sub>SPO+</sub>(<b>c&#770;</b>, <b>c</b>) = (2<b>c&#770;</b> &minus; <b>c</b>)<sup>T</sup> "
+        "( <b>x</b><sup>*</sup>(<b>c</b>) &minus; <b>x</b><sup>*</sup>(2<b>c&#770;</b> &minus; <b>c</b>) ) : "
+        "la perte est non n&eacute;gative, s'annule pour une pr&eacute;diction parfaite et d&eacute;domine la perte SPO. "
         "Son sous-gradient exact s'exprime sans inversion matricielle par : "
-        "&nabla;<sub><b>c&#770;</b></sub> <i>L</i><sub>SPO+</sub> = 2 &middot; ( <b>x</b><sup>*</sup>(<b>c&#770;</b>) &minus; <b>x</b><sup>*</sup>(2<b>c&#770;</b> &minus; <b>c</b>) ).",
+        "&nabla;<sub><b>c&#770;</b></sub> <i>L</i><sub>SPO+</sub> = 2 &middot; ( <b>x</b><sup>*</sup>(<b>c</b>) &minus; <b>x</b><sup>*</sup>(2<b>c&#770;</b> &minus; <b>c</b>) ).",
+        S["body"]
+    ))
+    E.append(Paragraph(
+        "<b>Note méthodologique (correction de convention) :</b> une version antérieure de cette "
+        "implémentation substituait <b>x</b><sup>*</sup>(<b>c&#770;</b>) et <b>c</b><sup>T</sup><b>x</b><sup>*</sup>(<b>c&#770;</b>) "
+        "à <b>x</b><sup>*</sup>(<b>c</b>) et <i>z</i><sup>*</sup>(<b>c</b>) dans l'&eacute;quation (7). Ce n'était pas un "
+        "probl&egrave;me de signe &mdash; la perte demeurait non n&eacute;gative &mdash; mais un &eacute;cart avec la "
+        "D&eacute;finition 3 : la convexit&eacute; de SPO<sup>+</sup> et le sous-gradient d'Elmachtoub & Grigas "
+        "ne s'appliquaient alors pas. La formulation retenue ici est celle de la source primaire "
+        "(arXiv:1710.08005v5, &sect;3.2) ; elle est verrouill&eacute;e par le script "
+        "<font face='Courier'>scripts/verify_spo_convention.py</font>, qui v&eacute;rifie la valeur, la "
+        "non-n&eacute;gativit&eacute;, la domination de la perte SPO, le sous-gradient, la convexit&eacute; et "
+        "l'&eacute;quivalence avec le chemin <b>cvxpylayers</b> (&eacute;carts num&eacute;riques < 10<sup>&minus;6</sup>).",
         S["body"]
     ))
     E.append(Paragraph(
@@ -580,7 +649,10 @@ def generate_story():
         S["equation"]
     ))
     E.append(Paragraph(
-        "où le terme de recours réévalue la décision sous les séries effectives. Une sélection sur grille a établi le coefficient optimal à <b>&lambda; = 0,30</b>.",
+        "où le terme de recours réévalue la décision sous les séries effectives. Le poids de couplage est "
+        "sélectionné par <i>early stopping</i> sur le regret de validation, pour une grille "
+        "&lambda; &isin; {0,05 ; 0,1 ; 0,3 ; 0,5 ; 1 ; 1,5 ; 2 ; 3 ; 5} ; la valeur retenue est "
+        f"<b>&lambda; = {fr(RES['exact'].get('chosen_lambda', 0.3), 2)}</b>.",
         S["body"]
     ))
 
@@ -624,29 +696,77 @@ def generate_story():
         S["body"]
     ))
 
+    def row(key: str, label: str, note: str = "") -> list:
+        m = RES["metrics"].get(key, {})
+        net, price, op = m.get("net", {}), m.get("price", {}), m.get("operational", {})
+        crps_net = fr(net["crps"], 3) if "crps" in net else "&mdash;"
+        crps_price = fr(price["crps"], 3) if "crps" in price else "&mdash;"
+        cov = fr(net["coverage_80"] * 100, 1) + " %" if "coverage_80" in net else "&mdash;"
+        cost = fr(op["cost_true_price"]) + " €" if "cost_true_price" in op else "&mdash;"
+        regret = fr(op["regret_pct"]) + " %" if "regret_pct" in op else "&mdash;"
+        return [label, crps_net, crps_price, cov, cost, regret + (f" ({note})" if note else "")]
+
     t4_headers = ["Modèle Évalué", "CRPS Net", "CRPS Prix", "Couverture 80%", "Coût Réel (€/24h)", "Regret vs Oracle (%)"]
     t4_rows = [
-        ["Persistance Naïve", "1,178", "&mdash;", "0,0 %", "62,13 €", "16,27 % (très dégradé)"],
-        ["LightGBM Quantile", "0,167 (meilleur)", "&mdash;", "78,2 %", "55,61 €", "3,10 %"],
-        ["XGBoost Quantile", "0,194", "&mdash;", "79,1 %", "55,39 €", "2,56 % (optimal baseline)"],
-        ["TFT Pinball Seul (Phase 1)", "0,189", "0,051", "84,0 %", "55,99 €", "3,82 %"],
-        ["TFT + SPO+ Boîte (Phase 2)", "0,208", "0,053", "82,3 %", "56,18 €", "4,21 %"],
-        ["TFT + SPO+ Exact (cvxpylayers)", "0,176", "0,049", "84,1 %", "55,51 €", "2,81 % (optimal end-to-end)"],
-        ["TFT Calibration Conforme", "0,212", "0,050", "88,4 % (garanti)", "56,18 €", "4,21 %"],
-        ["Clairvoyant (Oracle HiGHS)", "&mdash;", "&mdash;", "&mdash;", "54,08 € (plancher)", "0,00 % (référence)"],
+        row("persistence", "Persistance Naïve", "très dégradé"),
+        row("lightgbm", "LightGBM Quantile"),
+        row("xgboost", "XGBoost Quantile", "optimal baseline"),
+        row("tft_pinball", "TFT Pinball Seul (Phase 1)"),
+        row("tft_pinball_spo", "TFT + SPO+ Boîte (Phase 2)"),
+        row("tft_spo_exact", "TFT + SPO+ Exact (cvxpylayers)", "optimal end-to-end"),
+        row("tft_conf", "TFT Calibration Conforme", "garanti"),
+        ["Clairvoyant (Oracle HiGHS)", "&mdash;", "&mdash;", "&mdash;",
+         fr(metric("tft_pinball_spo", "cost_oracle", default=0.0)) + " € (plancher)", "0,00 % (référence)"],
     ]
     E.append(academic_table(t4_headers, t4_rows, [4.5*cm, 2.2*cm, 2.2*cm, 2.5*cm, 2.8*cm, 3.0*cm], align_left_col0=True))
     E.append(Paragraph("Tableau 4 : Performances comparatives sur les 241 fenêtres de test (nov.&ndash;déc. 2022).", S["caption"]))
 
+    reg_box = metric("tft_pinball_spo", "regret_pct", default=0.0)
+    reg_pin = metric("tft_pinball", "regret_pct", default=0.0)
+    crps_lgbm = RES["metrics"].get("lightgbm", {}).get("net", {}).get("crps", 0.0)
+    cov_lgbm = RES["metrics"].get("lightgbm", {}).get("net", {}).get("coverage_80", 0.0)
+    box_phrase = (
+        f"améliore le regret ({fr(reg_box)} % contre {fr(reg_pin)} % pour le pinball seul)"
+        if reg_box <= reg_pin
+        else f"dégrade le regret ({fr(reg_box)} % contre {fr(reg_pin)} % pour le pinball seul)"
+    )
     E.append(Paragraph(
         "<b>Enseignements Scientifiques Majeurs :</b><br/>"
-        "<b>1. Gradient Boosting vs Réseaux Profonds :</b> LightGBM minimise efficacement la métrique marginale (CRPS de 0,167), "
-        "mais au détriment de la calibration (78,2 % de couverture, en deçà de la cible théorique de 80 %).<br/>"
-        "<b>2. Rôle Décisif du Couplage Différentiable :</b> Alors que la formulation boîte dégrade les résultats (4,21 %) "
-        "en raison d'une approximation trop grossière des contraintes, le couplage <b>exact via cvxpylayers</b> abaisse le regret à <b>2,81 %</b>, "
-        "surpassant LightGBM (3,10 %) tout en maintenant une excellente calibration probabiliste (84,1 %).",
+        f"<b>1. Gradient Boosting vs Réseaux Profonds :</b> LightGBM minimise efficacement la métrique marginale (CRPS de {fr(crps_lgbm, 3)}), "
+        f"mais au détriment de la calibration ({fr(cov_lgbm * 100, 1)} % de couverture, en deçà de la cible théorique de 80 %).<br/>"
+        f"<b>2. Rôle Décisif du Couplage Différentiable :</b> La formulation boîte, conforme à la Définition 3 d'Elmachtoub & Grigas, "
+        f"{box_phrase} ; le couplage <b>exact via cvxpylayers</b> porte le regret à <b>{fr(reg_exact)} %</b>, "
+        f"soit la meilleure performance décisionnelle de l'étude (LightGBM {fr(reg_lgbm)} %, XGBoost {fr(reg_xgb)} %), "
+        f"tout en maintenant une calibration probabiliste de {fr(cov_exact * 100, 1)} %.",
         S["body"]
     ))
+
+    # Tableau 5 : selection de lambda par validation (phase 3)
+    _chosen = RES["exact"].get("chosen_lambda")
+    tlam_headers = ["λ", "Regret validation (%)", "Regret test (%)", "Statut"]
+    tlam_rows = []
+    for _r in RES["exact"].get("grid", []):
+        _selected = abs(_r["lambda"] - _chosen) < 1e-12 if _chosen is not None else False
+        tlam_rows.append([
+            fr(_r["lambda"], 2),
+            fr(_r["best_val_regret_pct"], 3),
+            fr(_r.get("test_regret_pct", float("nan")), 3),
+            "&bull; retenu (sélection val)" if _selected else "&mdash;",
+        ])
+    if tlam_rows:
+        E.append(Paragraph(
+            "Le Tableau 5 documente la sélection du poids de couplage &lambda; pour la phase 3. "
+            "La sélection s'opère <b>exclusivement sur le regret de validation</b> (protocole sans fuite "
+            "d'information sur le jeu de test) ; le regret de test est reporté a posteriori pour "
+            "quantifier la généralisation. Le couple (validation, test) est ici monotone : "
+            "&lambda; = 3 minimise simultanément les deux colonnes.",
+            S["body"]
+        ))
+        E.append(academic_table(tlam_headers, tlam_rows, [2.6*cm, 4.6*cm, 4.2*cm, 5.2*cm], align_left_col0=True))
+        E.append(Paragraph(
+            "Tableau 5 : Balayage du poids décisionnel &lambda; (phase 3, SPO+ exact via cvxpylayers).",
+            S["caption"]
+        ))
 
     # Pair 4 : Regret Comparison + Tradeoff Pareto
     E.append(academic_fig_pair(
@@ -676,7 +796,7 @@ def generate_story():
         ["Benchmark Latence", "src/optimization/benchmark.py", "Profilage milliseconde de chaque étape décisionnelle", "Temps total ~50 ms (pleinement compatible temps réel)"],
     ]
     E.append(academic_table(t5_headers, t5_rows, [3.2*cm, 4.3*cm, 5.5*cm, 4.2*cm], align_left_col0=True))
-    E.append(Paragraph("Tableau 5 : Synthèse des améliorations architecturales de la version 1.0.", S["caption"]))
+    E.append(Paragraph("Tableau 6 : Synthèse des améliorations architecturales de la version 1.0.", S["caption"]))
 
     E.append(Paragraph(
         "<b>Latence Opérationnelle :</b> Le benchmark confirme que l'inférence combinée TFT (15 ms), "
@@ -711,7 +831,7 @@ def generate_story():
     E.append(Paragraph(
         "Cette étude valide avec éclat le potentiel du paradigme <i>decision-focused learning</i> pour la gestion d'énergie. "
         "En substituant à la perte prévisionnelle isolée un gradient conscient des contraintes du dispatching, le modèle "
-        "<b>TFT+SPO<sup>+</sup> exact via cvxpylayers</b> abaisse le regret économique à <b>2,81 %</b> tout en certifiant "
+        f"<b>TFT+SPO<sup>+</sup> exact via cvxpylayers</b> abaisse le regret économique à <b>{fr(reg_exact)} %</b> tout en certifiant "
         "l'admissibilité physique du microgrid. La suite logicielle modulaire et les tests associés constituent un socle "
         "robuste pour les futurs déploiements industriels.",
         S["body"]
@@ -746,7 +866,7 @@ def generate_story():
     t6_rows = [
         ["Modèle Phase 1", "models/tft_pinball.pt", "Poids du réseau TFT pré-entraîné sous perte pinball pure"],
         ["Modèle Phase 2", "models/tft_spo.pt", "Modèle TFT réajusté avec pénalité SPO+ formulation boîte"],
-        ["Modèle Phase 3", "models/tft_spo_exact.pt", "Modèle optimal couplé via cvxpylayers (regret 2,81 %)"],
+        ["Modèle Phase 3", "models/tft_spo_exact.pt", f"Modèle optimal couplé via cvxpylayers (regret {fr(reg_exact)} %)"],
         ["Métriques Complètes", "results/experiment_results.json", "Logs d'entraînement, métriques de test et itérations C&amp;CG"],
         ["Résultats Exacts", "results/spo_exact_results.json", "Balayage des hyperparamètres λ et temps de convergence"],
         ["Données Traitées", "data/processed/dataset_2022.csv", "8 760 heures normalisées avec signaux cycliques"],
@@ -754,7 +874,7 @@ def generate_story():
         ["Dépôt Git Public", "https://github.com/rayanpr/Article1", "Code source exhaustif, historique de commits et tests"],
     ]
     E.append(academic_table(t6_headers, t6_rows, [3.8*cm, 5.6*cm, 7.8*cm], align_left_col0=True))
-    E.append(Paragraph("Tableau 6 : Répertoire complet des fichiers et modèles générés.", S["caption"]))
+    E.append(Paragraph("Tableau 7 : Répertoire complet des fichiers et modèles générés.", S["caption"]))
 
     E.append(Spacer(1, 2.5))
     E.append(Paragraph("Annexe B : Configuration Exhaustive des Hyperparamètres", S["h1"]))
@@ -767,12 +887,12 @@ def generate_story():
         ["Taux d'Abandon (Dropout)", "0,10 (TFT) / 0,20 (MC)", "Régularisation contre le surapprentissage sur données annuelles"],
         ["Niveaux de Quantiles τ", "{0.10, 0.25, 0.50, 0.75, 0.90}", "Estimation non paramétrique de l'intervalle 80 % et de la médiane"],
         ["Taux d'Apprentissage (lr)", "1e-3 (Phase 1) / 3e-4 (Phase 2)", "Descente de gradient Adam avec décroissance adaptative"],
-        ["Poids de Couplage Décisionnel λ", "0,30", "Maximise la réduction du regret sans détériorer la calibration quantile"],
+        ["Poids de Couplage Décisionnel λ", fr(RES["exact"].get("chosen_lambda", 0.3), 2), "Sélectionné par regret de validation parmi {0,05 ; 0,1 ; 0,3 ; 0,5 ; 1 ; 1,5 ; 2 ; 3 ; 5}"],
         ["Taille de Lot (Batch Size)", "32 fenêtres", "Optimise le débit mémoire lors des doubles solves linéaires"],
         ["Solveur d'Optimisation", "HiGHS (LP) / ECOS (diffcp)", "Haute rapidité de résolution et dérivabilité des conditions KKT"],
     ]
     E.append(academic_table(t7_headers, t7_rows, [4.8*cm, 3.4*cm, 9.0*cm], align_left_col0=True))
-    E.append(Paragraph("Tableau 7 : Paramètres d'apprentissage et de résolution numérique.", S["caption"]))
+    E.append(Paragraph("Tableau 8 : Paramètres d'apprentissage et de résolution numérique.", S["caption"]))
 
     return E
 

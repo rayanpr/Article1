@@ -83,7 +83,7 @@ python scripts\step3_preprocess.py
 # Étapes 5–6 : entraînement TFT (pinball → pinball+SPO+), baselines, évaluation
 python scripts\train_evaluate.py
 
-# Étape 6bis : couplage SPO+ exact sur le LP EMS (env .venv311, ~11 min CPU)
+# Étape 6bis : couplage SPO+ exact sur le LP EMS (env .venv311, ~35 min CPU)
 .venv311\Scripts\python scripts\train_spo_exact.py
 
 # Étape 7 : figures comparatives + rapport structuré
@@ -91,8 +91,9 @@ python scripts\step7_report.py
 ```
 
 - **Modèle** : TFT quantile (92,6 k paramètres) — phase 1 pinball (12 époques) puis phase 2 pinball + λ·SPO+ (6 époques, λ=0.3), seed=42, ~2 min CPU.
-- **SPO+ boîte** : gradient analytique `2(x*(ĉ) − x*(2ĉ − c))` via `torch.autograd.Function` (LP SciPy/HiGHS batch).
-- **SPO+ exact** (`train_spo_exact.py`, env `.venv311`) : LP EMS différenciable via cvxpylayers/diffcp (ECOS), loss = pinball + λ·(SPO+ à deux solves + terme de recours sous vraies séries), grille λ ∈ {0.05, 0.1, 0.3}, *early stopping* sur le regret val — checkpoint `models/tft_spo_exact.pt`.
+- **SPO+ boîte** : conforme à la Définition 3 d'Elmachtoub & Grigas (2022) — perte `(2ĉ−c)ᵀ(w*(c) − w*(2ĉ−c))`, gradient analytique `2(x*(c) − x*(2ĉ−c))` via `torch.autograd.Function` (LP SciPy/HiGHS).
+- **SPO+ exact** (`train_spo_exact.py`, env `.venv311`) : LP EMS différenciable via cvxpylayers/diffcp (ECOS, repli SCS), loss = pinball + λ·(SPO+ à trois solves : décision prédite, oracle prix vrai `z_c = x*(n̂,p)`, problème modifié `z₂ = x*(n̂,2p̂−p)` + terme de recours sous vraies séries), grille λ ∈ {0.05, 0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0}, *early stopping* sur le regret val — checkpoint `models/tft_spo_exact.pt`.
+- **Vérification de la convention SPO+** : `scripts/verify_spo_convention.py` (comparaison à la Définition 3, propriétés P1–P5, chemin `cvxpylayers`) — voir `docs/verification_spo_sign.md`.
 - **Baselines** : persistence, LightGBM quantile, XGBoost quantile, TFT pinball-only, conformal, clairvoyant (oracle).
 - **Sorties** : `models/tft_*.pt`, `results/experiment_results.json`, `results/spo_exact_results.json`, `results/rapport_workflow.md`, `figures/`.
 - **Formulations mathématiques** (LP/QP/MILP, TSRO, CRPS, SPO+, cvxpylayers) : `docs/formulations_mathematiques.md`.
@@ -103,10 +104,16 @@ python scripts\step7_report.py
 |---|---|---|
 | Persistence | 1.178 | 16.3 % |
 | LightGBM | **0.167** | 3.1 % |
-| XGBoost | 0.194 | **2.6 %** |
+| XGBoost | 0.194 | 2.6 % |
 | TFT pinball | 0.189 | 3.8 % |
-| **TFT+SPO+ exact (cvxpylayers)** | 0.176 | **2.8 %** |
-| TFT+SPO+ (boîte) | 0.208 | 4.2 % |
+| **TFT+SPO+ exact (cvxpylayers)** | 0.200 | **2.5 %** |
+| TFT+SPO+ (boîte) | 0.188 | 3.3 % |
+
+> Résultats recalculés après alignement de la perte SPO+ sur la Définition 3
+> d'Elmachtoub & Grigas (2022) — voir `docs/verification_spo_sign.md`.
+> λ de la phase 3 sélectionné par regret de validation parmi
+> {0.05, 0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0} → **λ = 3.0**
+> (regret val 3.01 %, regret test 2.50 %).
 
 Clairvoyant (perfect foresight) : 54.08 €/24 h. TSRO C&CG converge en 2 scénarios (nominal 49 € → pire-cas +63 %).
 Détails et recommandations : `results/rapport_workflow.md`.

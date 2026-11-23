@@ -41,45 +41,55 @@ def box_argmax(c: np.ndarray, batt: BatterySpec) -> np.ndarray:
 def _spo_terms_batch(c_hat: np.ndarray, c: np.ndarray, batt: BatterySpec) -> Tuple[np.ndarray, np.ndarray]:
     """
     Vectorized SPO terms computation for batch processing.
-    
+
+    Implements the SPO+ loss of Elmachtoub & Grigas (2022), Definition 3:
+
+        l_SPO+(c_hat, c) = max_{u in X} (c - 2 c_hat)^T u + 2 c_hat^T w*(c) - z*(c)
+                         = (2 c_hat - c)^T ( w*(c) - w*(2 c_hat - c) )
+
+    with subgradient 2 ( w*(c) - w*(2 c_hat - c) ).
+
     Args:
         c_hat: Predicted costs, shape (batch_size, horizon)
         c: True costs, shape (batch_size, horizon)
         batt: Battery specifications
         
     Returns:
-        losses: SPO losses, shape (batch_size,)
-        grads: Gradients, shape (batch_size, horizon)
+        losses: SPO+ losses, shape (batch_size,)
+        grads: Subgradients, shape (batch_size, horizon)
     """
     batch_size = c_hat.shape[0]
     horizon = c_hat.shape[1]
     
-    # Vectorized computation of x_hat and x_star
-    x_hat = np.zeros((batch_size, horizon))
-    x_star = np.zeros((batch_size, horizon))
+    # Vectorized computation of the two oracle decisions
+    w_c = np.zeros((batch_size, horizon))    # w*(c) : true-cost oracle
+    w_mod = np.zeros((batch_size, horizon))  # w*(2 c_hat - c) : modified-cost problem
     
     for i in range(batch_size):
-        x_hat[i] = box_argmin(c_hat[i], batt)
-        x_star[i] = box_argmax(c[i] - 2.0 * c_hat[i], batt)
+        w_c[i] = box_argmin(c[i], batt)
+        w_mod[i] = box_argmin(2.0 * c_hat[i] - c[i], batt)
     
-    # Vectorized loss computation
-    losses = np.zeros(batch_size)
-    for i in range(batch_size):
-        losses[i] = float(np.dot(c[i] - 2.0 * c_hat[i], x_star[i]) + 
-                          2.0 * np.dot(c_hat[i], x_hat[i]) - np.dot(c[i], x_hat[i]))
-    
-    losses = np.maximum(losses, 0.0)
-    
-    # Vectorized gradient computation
-    grads = 2.0 * (x_hat - x_star)
-    
+    # Vectorized loss computation: (2 c_hat - c)^T (w*(c) - w*(2 c_hat - c))
+    raw = np.einsum("bh,bh->b", 2.0 * c_hat - c, w_c - w_mod)
+
+    # Vectorized subgradient computation
+    grads = 2.0 * (w_c - w_mod)
+
+    # The theory guarantees losses >= 0 (l_SPO+ >= l_SPO >= 0); clip numerical noise only
+    losses = np.where(raw < 0.0, 0.0, raw)
+    grads[raw < 0.0] = 0.0
+
     return losses, grads
 
 
 def spo_plus_loss_torch_optimized(price_hat: torch.Tensor, price_true: torch.Tensor, batt: BatterySpec) -> torch.Tensor:
     """
     Optimized SPO+ loss implementation using vectorized operations.
-    
+
+    Implements the SPO+ loss of Elmachtoub & Grigas (2022), Definition 3, with
+    subgradient 2 ( w*(c) - w*(2 c_hat - c) ). The loss is non-negative and
+    vanishes when the prediction is exact.
+
     Args:
         price_hat: Predicted prices, shape (batch_size, horizon)
         price_true: True prices, shape (batch_size, horizon)
@@ -89,8 +99,8 @@ def spo_plus_loss_torch_optimized(price_hat: torch.Tensor, price_true: torch.Ten
         SPO+ loss tensor
     """
     # Convert to numpy for batch processing
-    c_hat = price_hat.detach().cpu().numpy()
-    c = price_true.detach().cpu().numpy()
+    c_hat = price_hat.detach().cpu().numpy().astype(np.float64)
+    c = price_true.detach().cpu().numpy().astype(np.float64)
     
     # Batch computation
     losses, grads = _spo_terms_batch(c_hat, c, batt)
@@ -123,11 +133,11 @@ def spo_plus_loss_torch_original(price_hat: torch.Tensor, price_true: torch.Tens
     """
     import torch
 
-    c_hat = price_hat.detach().cpu().numpy()
-    c = price_true.detach().cpu().numpy()
+    c_hat = price_hat.detach().cpu().numpy().astype(np.float64)
+    c = price_true.detach().cpu().numpy().astype(np.float64)
     batch = c_hat.shape[0]
-    losses = np.empty(batch, dtype=np.float32)
-    grads = np.empty_like(c_hat, dtype=np.float32)
+    losses = np.empty(batch, dtype=np.float64)
+    grads = np.empty_like(c_hat, dtype=np.float64)
     for i in range(batch):
         losses[i], grads[i] = _spo_terms(c_hat[i], c[i], batt)
     scale = float(np.mean(np.abs(c))) * c_hat.shape[1] + 1e-8
@@ -149,12 +159,14 @@ def spo_plus_loss_torch_original(price_hat: torch.Tensor, price_true: torch.Tens
 
 
 def _spo_terms(c_hat: np.ndarray, c: np.ndarray, batt: BatterySpec) -> Tuple[float, np.ndarray]:
-    """Original SPO terms computation for single instance."""
-    x_hat = box_argmin(c_hat, batt)
-    x_star = box_argmax(c - 2.0 * c_hat, batt)
-    loss = float(np.dot(c - 2.0 * c_hat, x_star) + 2.0 * np.dot(c_hat, x_hat) - np.dot(c, x_hat))
-    grad = 2.0 * (x_hat - x_star)
-    return max(loss, 0.0), grad
+    """SPO terms for a single instance (Definition 3, Elmachtoub & Grigas 2022)."""
+    w_c = box_argmin(c, batt)  # w*(c) : true-cost oracle
+    w_mod = box_argmin(2.0 * c_hat - c, batt)  # w*(2 c_hat - c) : modified-cost problem
+    loss = float(np.dot(2.0 * c_hat - c, w_c - w_mod))
+    grad = 2.0 * (w_c - w_mod)
+    if loss < 0.0:  # numerical noise only (theory gives loss >= 0)
+        return 0.0, np.zeros_like(c_hat)
+    return loss, grad
 
 
 def benchmark_spo_implementations(batch_sizes: list, horizon: int = 24, n_runs: int = 10) -> dict:

@@ -123,31 +123,74 @@ $$
 
 ($u_t = c_t - d_t$ ; polytope couplé, contraintes cumulées.)
 
-**SPOT loss** (non différenciable) :
+**SPOT loss** (non différenciable, Définition 2 d'Elmachtoub & Grigas) :
 
 $$
-\mathcal{L}_{SPOT}(\hat c, c) = c^\top x^\star(\hat c) - c^\top x^\star(c)
+\mathcal{L}_{SPOT}(\hat c, c) = c^\top x^\star(\hat c) - c^\top x^\star(c) \;\ge\; 0
 $$
 
-**SPO+** (borne inférieure convexe, dérivable presque partout) :
+(régret de la décision induite par la prédiction : $x^\star(\hat c)$ est la décision
+réellement implémentée, $x^\star(c)$ l'oracle sous le coût vrai.)
+
+**SPO+** (Définition 3, arXiv:1710.08005 §3.2 — convexe, dérivable presque partout) :
 
 $$
 \mathcal{L}_{SPO+}(\hat c, c) = \max_{x \in \mathcal{X}} \big(c - 2\hat c\big)^\top x
-+ 2\hat c^\top x^\star(\hat c) - c^\top x^\star(\hat c)
++ 2\hat c^\top x^\star(c) - z^\star(c),
+\qquad z^\star(c) = \min_{x\in\mathcal{X}} c^\top x = c^\top x^\star(c)
 $$
 
-Propriétés : $\mathcal{L}_{SPOT} \le \mathcal{L}_{SPO+} \le 2\,\mathcal{L}_{SPOT}$ (facteur 2).
-
-### 5.1 Gradient
-
-Le max est atteint en $x^\star(2\hat c - c)$ (car $\min_{x}(2\hat c - c)^\top x$) :
+soit, avec $x^\star(2\hat c - c) = \arg\min_x (2\hat c - c)^\top x$ :
 
 $$
-\nabla_{\hat c}\,\mathcal{L}_{SPO+} = 2\big(x^\star(\hat c) - x^\star(2\hat c - c)\big)
+\boxed{\;\mathcal{L}_{SPO+}(\hat c, c) = \big(2\hat c - c\big)^\top \big(x^\star(c) - x^\star(2\hat c - c)\big)\;}
+$$
+
+> **Attention — erreur corrigée (2026-11-23).** Une version antérieure du code et de
+> ce document utilisait $x^\star(\hat c)$ et $c^\top x^\star(\hat c)$ à la place de
+> $x^\star(c)$ et $z^\star(c)$ dans la définition de SPO+. Ce n'était pas un
+> simple problème de signe (la perte restait non négative), mais un écart avec la
+> Définition 3 : la convexité de $\mathcal{L}_{SPO+}$ et le sous-gradient
+> d'Elmachtoub & Grigas ne s'appliquaient pas. La formule ci-dessus est
+> conforme à la source et est vérifiée numériquement par
+> `scripts/verify_spo_convention.py` (voir §5.3).
+
+Propriétés (Elmachtoub & Grigas, Proposition 3) : $\mathcal{L}_{SPOT} \le \mathcal{L}_{SPO+}$,
+$\mathcal{L}_{SPO+}$ convexe en $\hat c$, $\mathcal{L}_{SPO+}(c,c) = 0$.
+
+### 5.1 Gradient (sous-gradient)
+
+Le max est atteint en $x^\star(2\hat c - c)$ (car $\min_{x}(2\hat c - c)^\top x$), et la
+solution d'un LP est constante par morceaux en coefficients de coût ; d'où
+(Proposition 3.3) :
+
+$$
+\nabla_{\hat c}\,\mathcal{L}_{SPO+} = 2\big(x^\star(c) - x^\star(2\hat c - c)\big)
 $$
 
 Chaînage avec le forecaster $\hat c_\theta$ : $\nabla_\theta = \nabla_{\hat c} \cdot \partial \hat c_\theta / \partial \theta$.
-Implémentation : `spo.spo_plus_loss` (LP SciPy/HiGHS batch) + `spo_plus_loss_torch` (tenseur détaché pour la régularisation décisionnelle dans la phase 2).
+Implémentation : `spo.spo_plus_loss` (LP SciPy/HiGHS) + `spo_plus_loss_torch` (deux solves
+par instance : $x^\star(c)$ et $x^\star(2\hat c - c)$ ; gradient analytique détaché).
+
+### 5.2 Coût de calcul
+
+Le SPO+ d'Elmachtoub & Grigas ne nécessite que **deux resolutions de LP par instance**
+(oracle sur le coût vrai + problème modifié) : le même nombre que la version
+précédente, mais les deux solutions intervenant dans la perte sont celles de la
+théorie.
+
+### 5.3 Vérification numérique
+
+`scripts/verify_spo_convention.py` (exécutable avec `.venv` et `.venv311`) contrôle :
+
+| Test | Propriété |
+|------|-----------|
+| P0 | valeurs implémentées = Définition 3 (écart < 1e-6) |
+| P1 | $\mathcal{L}_{SPO+}(c,c) = 0$ |
+| P2 | $\mathcal{L}_{SPO+} \ge \mathcal{L}_{SPOT} \ge 0$ |
+| P3 | gradient implémenté = sous-gradient $2(x^\star(c) - x^\star(2\hat c - c))$ |
+| P4 | convexité de $\mathcal{L}_{SPO+}$ en $\hat c$ |
+| P5 | chemin `cvxpylayers` (LP EMS complet) : même valeur et même gradient |
 
 ## 6. Couche d'optimisation différentielle (cvxpylayers)
 
@@ -175,11 +218,40 @@ Solveur : **ECOS** uniquement (`diffcp` ne supporte qu'ECOS/SCS). Entraînement 
 
 Deux composantes, normalisées par $\text{scale} = \frac{1}{N}\sum_i\sum_t |p_t n_t| \approx 114{,}1$ :
 
-1. **SPO+ à deux solves** (signal prix) :
-   $\ell = (p - 2\hat p)^{\top}\big(\psi(z_2) - \psi(z_1)\big) \ge 0$, où $z_1 = x^*(\hat n, \hat p)$, $z_2 = x^*(\hat n, 2\hat p - p)$ et $\psi(z) = g - \beta x$. Gradient w.r.t. $\hat p$ : $2(\psi(z_1) - \psi(z_2))$ (terme explicite ; la solution d'un LP est constante par morceaux en coefficients de coût).
+1. **SPO+ (Définition 3)** — trois résolutions du LP EMS, toutes avec la **même**
+   charge nette prédite $\hat n$ (ensemble faisable $\mathcal{X}$ fixe, exigence
+   d'Elmachtoub & Grigas) :
+
+   | symbole | problème résolu | rôle |
+   |---------|------------------|------|
+   | $z_1 = x^\star(\hat n, \hat p)$ | prix prédit | décision implémentée (terme de recours) |
+   | $z_c = x^\star(\hat n, p)$ | prix vrai | oracle $w^\star(c)$ de la Définition 3 |
+   | $z_2 = x^\star(\hat n, 2\hat p - p)$ | prix modifié | $w^\star(2\hat c - c)$ |
+
+   Avec $\psi(z) = g - \beta x$ (gradient partiel du coût par rapport au prix) :
+
+   $$
+   \ell_{\text{SPO+}} = \big(2\hat p - p\big)^\top\big(\psi(z_c) - \psi(z_2)\big) \;\ge\; 0
+   $$
+
+   Gradient par rapport à $\hat p$ : $2\big(\psi(z_c) - \psi(z_2)\big)$ (terme explicite ;
+   les solutions d'un LP sont constantes par morceaux en coefficients de coût, donc
+   $z_c$ et $z_2$ sont détachés dans le graphe de differentiation).
+
 2. **Terme de recours** (signal net exact) : planning $(ch_1, dis_1)$ réévalué sous les vraies séries — $b = n_{\text{true}} + ch_1 - dis_1$, coût $\sum_t p_{\text{true},t}(\mathrm{relu}(b_t) - \beta\,\mathrm{relu}(-b_t))$.
 
-$\mathcal{L} = \mathcal{L}_{pinball} + \lambda\,(\ell_{\text{SPO+}} + \beta\,\ell_{\text{recours}})$, $\beta = 1$, grille $\lambda \in \{0{,}05; 0{,}1; 0{,}3\}$, *early stopping* sur le regret val.
+$\mathcal{L} = \mathcal{L}_{pinball} + \lambda\,(\ell_{\text{SPO+}} + \beta\,\ell_{\text{recours}})$, $\beta = 1$, grille $\lambda \in \{0{,}05; 0{,}1; 0{,}3; 0{,}5; 1; 1{,}5; 2; 3; 5\}$, *early stopping* sur le regret val (patience 2, 8 époques max), sélection finale du modèle par le **regret de validation**.
+
+> **Note — grille λ étendue (2026-11-23).** La perte étant enfin conforme à la
+> Définition 3 (et le shim `diffcp` rétablissant le gradient), l'optimum de la
+> grille d'origine $\{0{,}05; 0{,}1; 0{,}3\}$ n'est plus le meilleur : le regret
+> de validation décroît jusqu'à $\lambda \approx 3$. La grille complète explorée
+> est donc utilisée pour la sélection, et chaque $\lambda$ est évalué sur le
+> jeu de test (colonnes `test_regret_pct` de `results/spo_exact_results.json`).
+
+Résolution numérique : **ECOS** en solveur principal ; en cas d'échec transitoire
+sur un lot dégénéré, le triplet de résolutions est refait avec **SCS** (diffcp
+supporte les deux) plutôt que d'abandonner le lot.
 
 ## 7. Pipeline d'entraînement decision-focused (3 phases)
 

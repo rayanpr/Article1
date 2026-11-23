@@ -30,9 +30,9 @@ from train_evaluate import (
     to_loaders,
 )
 
-LAMBDA_GRID = [0.05, 0.1, 0.3]
+LAMBDA_GRID = [0.05, 0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
 BETA = 1.0
-EPOCHS_MAX = 6
+EPOCHS_MAX = 8
 PATIENCE = 2
 LR = 3e-4
 STRIDE = 8
@@ -99,8 +99,18 @@ def run_lambda(lam: float, arr: dict, layer, scale: float, beta: float = BETA,
             if bad >= PATIENCE:
                 print(f"  lam={lam} early stop apres ep {ep}", flush=True)
                 break
+    # Evaluation operationnelle du meilleur etat sur le jeu de test : permet de
+    # tracer regret(test) = f(lambda) dans la figure de balayage (le regret de
+    # test n'etait otherwise disponible que pour le lambda retenu).
+    model.load_state_dict(best_state)
+    model.eval()
+    q_test = predict(model, arr["X_test"])
+    op_test = operational_metrics(q_test, arr["y_test"], arr, sm, ss)
+    print(f"  lam={lam} test regret={op_test['regret_pct']:.3f}%", flush=True)
+
     return {"lambda": lam, "best_val_regret_pct": round(best_regret, 4),
             "init_val_regret_pct": round(init_regret, 4),
+            "test_regret_pct": round(op_test["regret_pct"], 4),
             "epochs_run": len(log) - 1, "train_time_s": round(time.time() - t0, 1),
             "log": log, "best_state": best_state}
 
@@ -204,6 +214,21 @@ def main() -> None:
                 k: v["operational"]["regret_pct"]
                 for k, v in base.get("metrics", {}).items() if "operational" in v
             }
+            # Fusion des metriques du modele exact retenu dans le fichier de resultats
+            # principal (consomme par scripts/build_professional_figures.py,
+            # scripts/step7_report.py et le rapport PDF). Effectuee uniquement pour
+            # l'execution de reference (pas de --tag) afin que les balayages ne
+            # remplacent pas les metriques du modele selectionne.
+            if not args.tag:
+                base.setdefault("metrics", {})["tft_spo_exact"] = {
+                    "net": results["test"]["net"],
+                    "price": results["test"]["price"],
+                    "operational": results["test"]["operational"],
+                }
+                base_file.write_text(
+                    json.dumps(base, indent=2, ensure_ascii=False, default=float),
+                    encoding="utf-8",
+                )
 
     results["total_time_s"] = round(time.time() - t_all, 1)
     if args.smoke:

@@ -35,14 +35,33 @@ def box_argmax(c: np.ndarray, batt: BatterySpec) -> np.ndarray:
 
 
 def _spo_terms(c_hat: np.ndarray, c: np.ndarray, batt: BatterySpec) -> tuple[float, np.ndarray]:
-    x_hat = box_argmin(c_hat, batt)
-    x_star = box_argmax(c - 2.0 * c_hat, batt)
-    loss = float(np.dot(c - 2.0 * c_hat, x_star) + 2.0 * np.dot(c_hat, x_hat) - np.dot(c, x_hat))
-    grad = 2.0 * (x_hat - x_star)
-    return max(loss, 0.0), grad
+    """Termes de la perte SPO+ (Definition 3, Elmachtoub & Grigas, 2022).
+
+    Pour le probleme de minimisation ``min_{u in X} c^T u`` :
+
+        l_SPO+(c_hat, c) = max_{u in X} (c - 2 c_hat)^T u + 2 c_hat^T w*(c) - z*(c)
+                         = (2 c_hat - c)^T ( w*(c) - w*(2 c_hat - c) )
+
+    avec ``w*(c) = argmin_{u in X} c^T u`` (oracle sur le cout vrai) et
+    ``w*(2 c_hat - c) = argmin_{u in X} (2 c_hat - c)^T u`` (probleme modifie).
+
+    Sous-gradient (Proposition 3.3) :
+        dl_SPO+ / d c_hat = 2 ( w*(c) - w*(2 c_hat - c) )
+
+    La theorie garantit l_SPO+ >= l_SPO >= 0 (Proposition 3.1) et
+    l_SPO+(c, c) = 0.
+    """
+    w_c = box_argmin(c, batt)  # w*(c) : decision oracle sous le cout vrai
+    w_mod = box_argmin(2.0 * c_hat - c, batt)  # w*(2 c_hat - c) : probleme modifie
+    loss = float(np.dot(2.0 * c_hat - c, w_c - w_mod))
+    grad = 2.0 * (w_c - w_mod)
+    if loss < 0.0:  # bruit numerique uniquement (la theorie donne loss >= 0)
+        return 0.0, np.zeros_like(c_hat)
+    return loss, grad
 
 
 def spo_plus_loss(price_hat: np.ndarray, price_true: np.ndarray, batt: BatterySpec) -> float:
+    """Perte SPO+ (Definition 3, Elmachtoub & Grigas 2022)."""
     c_hat = np.asarray(price_hat, dtype=float).ravel()
     c = np.asarray(price_true, dtype=float).ravel()
     loss, _ = _spo_terms(c_hat, c, batt)

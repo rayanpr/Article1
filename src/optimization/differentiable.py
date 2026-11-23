@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import warnings
 
 import numpy as np
@@ -16,6 +17,32 @@ except Exception:
 SOLVE_METHOD = "ECOS"
 
 _LAYER_CACHE: dict = {}
+
+
+def _patch_diffcp_solve_only_batch() -> None:
+    """Compatibilite diffcp 1.0.x / cvxpylayers >= 1.1.
+
+    cvxpylayers appelle ``diffcp.solve_only_batch`` sur le chemin "sans gradient"
+    (parametres non differentiables), fonction absente de diffcp 1.0.x. On la
+    redefinit ici via ``solve_and_derivative_batch`` (meme resultat primal, on
+    ignore l'adjoint). Sans ce correctif, tout appel de la couche dont les
+    parametres ne requierent pas de gradient echoue silencieusement.
+    """
+    try:
+        import diffcp
+    except Exception:  # pragma: no cover - diffcp optionnel
+        return
+    if hasattr(diffcp, "solve_only_batch"):
+        return
+
+    def _solve_only_batch(A, b, c, cone_dicts, **kwargs):
+        xs, ys, *_ = diffcp.solve_and_derivative_batch(A, b, c, cone_dicts, **kwargs)
+        return xs, ys, None
+
+    diffcp.solve_only_batch = _solve_only_batch
+
+
+_patch_diffcp_solve_only_batch()
 
 
 def build_ems_layer(horizon: int = 24, e_max: float = 100.0, e_min: float = 0.1,
@@ -58,9 +85,30 @@ def solve_with_layer(layer, net, price):
     return {"import": g, "export": x, "charge": ch, "discharge": dis, "soc": e}
 
 
+def _solve_triple(layer, net_hat_r, price_hat_r, price_true_r, solver: str):
+    """Les trois resolutions du LP EMS (decision predite, oracle, probleme modifie)."""
+    z1 = layer(net_hat_r, price_hat_r, solver_args={"solve_method": solver})
+    z_c = layer(net_hat_r, price_true_r, solver_args={"solve_method": solver})
+    z2 = layer(net_hat_r, 2.0 * price_hat_r - price_true_r,
+               solver_args={"solve_method": solver})
+    return z1, z_c, z2
+
+
 def _spo_exact_impl(layer, net_hat, price_hat, net_true, price_true,
                     scaler_mean, scaler_std, export_ratio: float = 0.5,
                     beta: float = 1.0, scale: float = 1.0) -> torch.Tensor:
+    """SPO+ (Definition 3, Elmachtoub & Grigas 2022) + recourse term on the EMS LP.
+
+    With the cost vector c = p (price) acting on psi(z) = g - rho * x, the SPO+ loss reads
+
+        l_SPO+ = max_z (c - 2 c_hat)^T psi(z) + 2 c_hat^T w*(c) - z*(c)
+               = (2 c_hat - c)^T ( psi(w*(c)) - psi(w*(2 c_hat - c)) )
+
+    where w*(c) solves the EMS with the true price and w*(2 c_hat - c) solves it
+    with the modified price 2 c_hat - c (both with the same feasible set, i.e. the
+    predicted net load). The subgradient w.r.t. c_hat is 2 (psi(w*(c)) - psi(w*(2 c_hat - c))),
+    the LP solutions being piecewise constant in the cost coefficients.
+    """
     mean_t = torch.as_tensor(scaler_mean, dtype=net_hat.dtype, device=net_hat.device)
     std_t = torch.as_tensor(scaler_std, dtype=net_hat.dtype, device=net_hat.device)
 
@@ -69,14 +117,22 @@ def _spo_exact_impl(layer, net_hat, price_hat, net_true, price_true,
     net_true_r = net_true * std_t[0] + mean_t[0]
     price_true_r = price_true * std_t[1] + mean_t[1]
 
-    g1, x1, ch1, dis1, _ = layer(net_hat_r, price_hat_r, solver_args={"solve_method": SOLVE_METHOD})
-    g2, x2, _, _, _ = layer(net_hat_r, 2.0 * price_hat_r - price_true_r,
-                             solver_args={"solve_method": SOLVE_METHOD})
+    # ECOS peut echouer transitoirement sur certains lots (LP degenere) : on
+    # re-solve l'integralite du triplet avec SCS plutot que d'abandonner le
+    # lot (le gradient SPO+ serait alors nul pour ce lot).
+    try:
+        (g1, x1, ch1, dis1, _), (g_c, x_c, _, _, _), (g_m, x_m, _, _, _) = _solve_triple(
+            layer, net_hat_r, price_hat_r, price_true_r, SOLVE_METHOD
+        )
+    except Exception:
+        (g1, x1, ch1, dis1, _), (g_c, x_c, _, _, _), (g_m, x_m, _, _, _) = _solve_triple(
+            layer, net_hat_r, price_hat_r, price_true_r, "SCS"
+        )
 
-    spo_terms = (
-        (price_true_r - 2.0 * price_hat_r) * (g2 - export_ratio * x2)
-        + (2.0 * price_hat_r - price_true_r) * (g1 - export_ratio * x1)
-    )
+    # SPO+ term: LP solutions are piecewise constant -> detach (E&G subgradient)
+    psi_c = (g_c - export_ratio * x_c).detach()
+    psi_m = (g_m - export_ratio * x_m).detach()
+    spo_terms = (2.0 * price_hat_r - price_true_r) * (psi_c - psi_m)
     spo = spo_terms.sum(dim=-1).clamp_min(0.0).mean()
 
     b = net_true_r + ch1 - dis1
@@ -93,4 +149,7 @@ def spo_exact_loss(layer, net_hat, price_hat, net_true, price_true,
                                scaler_mean, scaler_std, export_ratio, beta, scale)
     except Exception as exc:
         warnings.warn(f"couche EMS (cvxpylayers) en echec : {exc} — lot ignore")
+        if os.environ.get("SPO_DEBUG"):
+            import traceback
+            traceback.print_exc()
         return net_hat.sum() * 0.0

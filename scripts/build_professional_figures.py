@@ -67,10 +67,11 @@ def regret_figure(base: dict) -> None:
     ax.set_title("Performance décisionnelle sur 241 fenêtres de test (seed 42)")
     ax.set_ylim(0, max(values) * 1.18)
     ax.tick_params(axis="x", labelsize=8)
+    gain = 100.0 * (values[3] - values[5]) / values[3]
     ax.annotate(
-        "TFT+SPO+ exact : −26,6 %\nde regret vs TFT pinball",
+        f"TFT+SPO+ exact : −{gain:.1f} %\nde regret vs TFT pinball",
         xy=(5, values[5]),
-        xytext=(3.5, 14.2),
+        xytext=(3.5, max(values) * 0.88),
         arrowprops={"arrowstyle": "->", "color": GOLD, "lw": 1.2},
         fontsize=8.5,
         color=NAVY,
@@ -107,26 +108,66 @@ def tradeoff_figure(base: dict) -> None:
     plt.close(fig)
 
 
-def lambda_figure() -> None:
-    rows = []
+def _sweep_sources() -> list[tuple[str, float]]:
+    """Balayages lambda complementaires (fichier JSON, lambda cible)."""
+    return [
+        ("spo_exact_lam05b10.json", 0.5),
+        ("spo_exact_lam10b10.json", 1.0),
+        ("spo_exact_lam15b10.json", 1.5),
+        ("spo_exact_lam20b10.json", 2.0),
+        ("spo_exact_lam2.json", 3.0),
+    ]
+
+
+def _lambda_rows() -> list[tuple[float, float, float | None]]:
+    """(lambda, regret validation, regret test) pour chaque lambda explore.
+
+    Source primaire : grille de reference `spo_exact_results.json` (chaque ligne
+    contient le regret de validation et le regret de test du meilleur etat pour
+    ce lambda). Les balayages complementaires ne servent qu'a completer les
+    points absents de la grille de reference.
+    """
+    rows: list[tuple[float, float, float | None]] = []
     primary = load("spo_exact_results.json")
-    g03 = next(r for r in primary["grid"] if abs(r["lambda"] - 0.3) < 1e-12)
-    rows.append((0.3, g03["best_val_regret_pct"], primary["test"]["operational"]["regret_pct"]))
-    for lam, filename in [
-        (0.5, "spo_exact_lam05b10.json"),
-        (1.0, "spo_exact_lam10b10.json"),
-        (1.5, "spo_exact_lam15b10.json"),
-        (2.0, "spo_exact_lam20b10.json"),
-    ]:
-        d = load(filename)
-        rows.append((lam, d["best_val_regret_pct"], d["test"]["operational"]["regret_pct"]))
-    sweep = load("spo_exact_lam2.json")
-    row3 = next(r for r in sweep["grid"] if r["lambda"] == 3.0)
-    rows.append((3.0, row3["best_val_regret_pct"], sweep["test"]["operational"]["regret_pct"]))
-    rows.sort()
+    for r in primary.get("grid", []):
+        rows.append((
+            float(r["lambda"]),
+            float(r["best_val_regret_pct"]),
+            r.get("test_regret_pct"),
+        ))
+
+    for filename, target_lambda in _sweep_sources():
+        if not (RESULTS / filename).exists():
+            continue
+        if any(abs(target_lambda - r[0]) < 1e-12 for r in rows):
+            continue
+        data = load(filename)
+        row = next(
+            (r for r in data.get("grid", []) if abs(r["lambda"] - target_lambda) < 1e-12),
+            None,
+        )
+        if row is None:
+            continue
+        test_regret = None
+        if abs(data.get("chosen_lambda", -1.0) - target_lambda) < 1e-12:
+            test_regret = data["test"]["operational"]["regret_pct"]
+        rows.append((target_lambda, float(row["best_val_regret_pct"]), test_regret))
+
+    rows.sort(key=lambda r: r[0])
+    return rows
+
+
+def lambda_figure() -> None:
+    """Regret de validation et de test en fonction de lambda (selection sur validation).
+
+    Le regret de test n'est disponible que pour les lambdas dont le modele
+    correspondant a ete evalue sur le jeu de test ; les points sans test
+    correspondant sont simplement absents de la serie 'Regret de test'.
+    """
+    rows = _lambda_rows()
     x = np.array([r[0] for r in rows])
     val = np.array([r[1] for r in rows])
-    test = np.array([r[2] for r in rows])
+    test = np.array([np.nan if r[2] is None else r[2] for r in rows])
     selected_idx = int(np.argmin(val))
 
     fig, ax = plt.subplots(figsize=(7.6, 4.4), constrained_layout=True)
@@ -136,7 +177,7 @@ def lambda_figure() -> None:
     ax.annotate(
         f"Sélection par validation\n$\\lambda={x[selected_idx]:g}$",
         xy=(x[selected_idx], val[selected_idx]),
-        xytext=(1.8, 3.25),
+        xytext=(0.85, 3.25),
         arrowprops={"arrowstyle": "->", "color": GREEN},
         color=GREEN,
         fontsize=8.5,
@@ -144,7 +185,10 @@ def lambda_figure() -> None:
     ax.set_xlabel("Poids décisionnel $\\lambda$ (SPO+ exact)")
     ax.set_ylabel("Regret (%)")
     ax.set_title("Exploration de $\\lambda$ : sélection sur validation, mesure sur test")
+    ax.set_xscale("log")
     ax.set_xticks(x)
+    ax.set_xticklabels([f"{v:g}" for v in x])
+    ax.minorticks_off()
     ax.legend(loc="best")
     out = FIGURES / "professional_lambda_sweep.png"
     fig.savefig(out, dpi=220, facecolor="white")
@@ -153,14 +197,18 @@ def lambda_figure() -> None:
 
 def validation_trajectory_figure() -> None:
     """Plot phase-3 validation regret by epoch from the saved training logs."""
-    sources = [
-        (0.3, "spo_exact_results.json", 0.3),
-        (0.5, "spo_exact_lam05b10.json", 0.5),
-        (1.0, "spo_exact_lam10b10.json", 1.0),
-        (1.5, "spo_exact_lam15b10.json", 1.5),
-        (2.0, "spo_exact_lam20b10.json", 2.0),
-        (3.0, "spo_exact_lam2.json", 3.0),
-    ]
+    sources: list[tuple[float, str, float]] = []
+    primary = load("spo_exact_results.json")
+    for r in primary.get("grid", []):
+        sources.append((float(r["lambda"]), "spo_exact_results.json", float(r["lambda"])))
+    for filename, target_lambda in _sweep_sources():
+        if not (RESULTS / filename).exists():
+            continue
+        if any(abs(target_lambda - s[0]) < 1e-12 for s in sources):
+            continue
+        sources.append((target_lambda, filename, target_lambda))
+    sources.sort(key=lambda s: s[0])
+
     fig, ax = plt.subplots(figsize=(7.8, 4.6), constrained_layout=True)
     cmap = plt.get_cmap("viridis")
     for i, (lam, filename, target_lambda) in enumerate(sources):

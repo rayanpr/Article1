@@ -8,13 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial implementation of the project
-- Basic TFT model and SPO+ optimization
-- Data preprocessing and visualization tools
-- Unit tests for core functionality
+- `scripts/verify_spo_convention.py` : vérification numérique de la perte SPO+ contre la
+  Définition 3 d'Elmachtoub & Grigas (2022) — valeurs, non-négativité, domination de la
+  perte SPO, sous-gradient, convexité, chemin `cvxpylayers`.
+- `docs/verification_spo_sign.md` : analyse complète de la convention SPO+ (diagnostic
+  initial « signe inversé » infirmé, écart réel avec la Définition 3, correctifs).
+- Tests unitaires `TestSPOElmachtoubGrigas` verrouillant la conformité à la Définition 3.
 
 ### Changed
-- Nothing yet
+- Perte SPO+ (modèle boîte, `src/optimization/spo.py` / `spo_optimized.py`) :
+  `(2ĉ−c)ᵀ(w*(c) − w*(2ĉ−c))` au lieu de l'expression substituant `w*(ĉ)` et `cᵀw*(ĉ)`
+  à `w*(c)` et `z*(c)` — sous-gradient `2(w*(c) − w*(2ĉ−c))`.
+- Perte SPO+ exacte (`src/optimization/differentiable.py`) : trois résolutions du LP EMS
+  (décision prédite, oracle prix vrai `z_c = x*(n̂,p)`, problème modifié `z₂ = x*(n̂,2p̂−p)`),
+  solutions détachées (constantes par morceaux en coefficients de coût).
+- Grille λ de la phase 3 étendue de `{0.05, 0.1, 0.3}` à
+  `{0.05, 0.1, 0.3, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0}` (8 époques max, patience 2) :
+  la perte enfin conforme à la Définition 3 déplace l'optimum de λ ; la sélection
+  du modèle final se fait par regret de **validation**, chaque λ étant évalué
+  sur le test (`test_regret_pct` dans `results/spo_exact_results.json`).
+- Documentation (`docs/formulations_mathematiques.md`, `README.md`, rapport PDF §V)
+  alignée sur la Définition 3.
+- Entraînement et résultats expérimentaux recalculés avec la perte corrigée.
 
 ### Deprecated
 - Nothing yet
@@ -23,7 +38,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nothing yet
 
 ### Fixed
-- Nothing yet
+- Compatibilité `diffcp 1.0.x` / `cvxpylayers ≥ 1.1` : le chemin « sans gradient » de
+  `cvxpylayers` appelait `diffcp.solve_only_batch`, absent de diffcp 1.0.x ; l'échec
+  silencieux rendait la perte SPO+ exacte nulle (entraînement réduit au pinball).
+- Robustesse de la couche EMS : en cas d'échec transitoire du solveur ECOS sur un
+  lot dégénéré, le triplet de résolutions est refait avec SCS au lieu d'abandonner
+  le lot (gradient SPO+ nul pour ce lot).
+- Précision numérique : chemins batch et unitaire de la perte SPO+ en `float64`
+  (le chemin unitaire était en `float32`).
+- Assertions de forme erronées dans `tests/test_spo_optimization.py` (`box_argmin` /
+  `box_argmax` vérifiaient une longueur fixe de 24 au lieu de la longueur de l'entrée).
 
 ### Security
 - Nothing yet
