@@ -19,7 +19,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, PageBreak, KeepTogether, Image
+    HRFlowable, KeepTogether, Image
 )
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -45,9 +45,6 @@ pdfmetrics.registerFontFamily(
     boldItalic="Cambria-BoldItalic",
 )
 
-# Enregistrement complémentaire d'Arial pour les titrages modernes si souhaité
-pdfmetrics.registerFont(TTFont("Arial-Bold", str(FONT_DIR / "arialbd.ttf")))
-
 # ─── Palette Graphique Académique (IEEE / Elsevier) ──────────────────────────
 C_PRIMARY    = HexColor("#0A2647")   # Bleu marine impérial (Titres majeurs)
 C_SECONDARY  = HexColor("#144272")   # Bleu cobalt profond (Sous-titres & filets)
@@ -63,82 +60,82 @@ C_WHITE      = colors.white
 def create_styles():
     return {
         "doc_title": ParagraphStyle(
-            "doc_title", fontName="Cambria-Bold", fontSize=18,
-            textColor=C_PRIMARY, leading=22, alignment=TA_CENTER, spaceAfter=4
+            "doc_title", fontName="Cambria-Bold", fontSize=17,
+            textColor=C_PRIMARY, leading=21, alignment=TA_CENTER, spaceAfter=3
         ),
         "doc_subtitle": ParagraphStyle(
-            "doc_subtitle", fontName="Cambria-Italic", fontSize=10.5,
-            textColor=C_SECONDARY, leading=14, alignment=TA_CENTER, spaceAfter=6
+            "doc_subtitle", fontName="Cambria-Italic", fontSize=10,
+            textColor=C_SECONDARY, leading=13.5, alignment=TA_CENTER, spaceAfter=5
         ),
         "author": ParagraphStyle(
-            "author", fontName="Cambria-Bold", fontSize=10.5,
-            textColor=C_TEXT_DARK, leading=13.5, alignment=TA_CENTER, spaceAfter=2
+            "author", fontName="Cambria-Bold", fontSize=10,
+            textColor=C_TEXT_DARK, leading=13, alignment=TA_CENTER, spaceAfter=2
         ),
         "affiliation": ParagraphStyle(
-            "affiliation", fontName="Cambria", fontSize=8.5,
-            textColor=C_TEXT_MUTED, leading=12, alignment=TA_CENTER, spaceAfter=8
+            "affiliation", fontName="Cambria", fontSize=8.2,
+            textColor=C_TEXT_MUTED, leading=11.5, alignment=TA_CENTER, spaceAfter=6
         ),
         "abstract_box": ParagraphStyle(
-            "abstract_box", fontName="Cambria", fontSize=8.8,
-            textColor=C_TEXT_DARK, leading=13, alignment=TA_JUSTIFY,
-            leftIndent=0.7*cm, rightIndent=0.7*cm, spaceAfter=5
+            "abstract_box", fontName="Cambria", fontSize=8.3,
+            textColor=C_TEXT_DARK, leading=11.8, alignment=TA_JUSTIFY,
+            leftIndent=0.6*cm, rightIndent=0.6*cm, spaceAfter=3.5
         ),
         "keywords": ParagraphStyle(
-            "keywords", fontName="Cambria-Italic", fontSize=8.2,
-            textColor=C_TEXT_MUTED, leading=11.5, alignment=TA_LEFT,
-            leftIndent=0.7*cm, spaceAfter=6
+            "keywords", fontName="Cambria-Italic", fontSize=7.8,
+            textColor=C_TEXT_MUTED, leading=10.8, alignment=TA_LEFT,
+            leftIndent=0.6*cm, spaceAfter=4
         ),
         "h1": ParagraphStyle(
-            "h1", fontName="Cambria-Bold", fontSize=11,
-            textColor=C_PRIMARY, leading=14.5, spaceBefore=7, spaceAfter=3,
+            "h1", fontName="Cambria-Bold", fontSize=10.2,
+            textColor=C_PRIMARY, leading=13.5, spaceBefore=6, spaceAfter=2.5,
             keepWithNext=True
         ),
         "h2": ParagraphStyle(
-            "h2", fontName="Cambria-Bold", fontSize=9.5,
-            textColor=C_SECONDARY, leading=13, spaceBefore=5, spaceAfter=2.5,
+            "h2", fontName="Cambria-Bold", fontSize=9,
+            textColor=C_SECONDARY, leading=12, spaceBefore=4, spaceAfter=2,
             keepWithNext=True
         ),
         "body": ParagraphStyle(
-            "body", fontName="Cambria", fontSize=8.8,
-            textColor=C_TEXT_DARK, leading=12.8, alignment=TA_JUSTIFY, spaceAfter=4
+            "body", fontName="Cambria", fontSize=8.4,
+            textColor=C_TEXT_DARK, leading=11.8, alignment=TA_JUSTIFY, spaceAfter=3
         ),
         "bullet": ParagraphStyle(
-            "bullet", fontName="Cambria", fontSize=8.8,
-            textColor=C_TEXT_DARK, leading=12.5, leftIndent=0.5*cm,
-            bulletIndent=0.2*cm, spaceAfter=2.5
+            "bullet", fontName="Cambria", fontSize=8.4,
+            textColor=C_TEXT_DARK, leading=11.6, leftIndent=0.5*cm,
+            bulletIndent=0.2*cm, spaceAfter=1.8
         ),
         "equation": ParagraphStyle(
-            "equation", fontName="Cambria", fontSize=8.8,
-            textColor=C_PRIMARY, leading=12.5, alignment=TA_CENTER,
-            leftIndent=0.6*cm, rightIndent=0.6*cm, spaceBefore=3, spaceAfter=3
+            "equation", fontName="Cambria", fontSize=8.4,
+            textColor=C_PRIMARY, leading=11.8, alignment=TA_CENTER,
+            leftIndent=0.5*cm, rightIndent=0.5*cm, spaceBefore=2, spaceAfter=2
         ),
         "caption": ParagraphStyle(
-            "caption", fontName="Cambria", fontSize=8,
-            textColor=C_TEXT_MUTED, leading=11, alignment=TA_CENTER,
-            spaceBefore=2.5, spaceAfter=6, keepWithNext=False
+            "caption", fontName="Cambria", fontSize=7.6,
+            textColor=C_TEXT_MUTED, leading=10, alignment=TA_CENTER,
+            spaceBefore=2, spaceAfter=4, keepWithNext=False
         ),
         "table_cell": ParagraphStyle(
-            "table_cell", fontName="Cambria", fontSize=8,
-            textColor=C_TEXT_DARK, leading=10.5, alignment=TA_CENTER
+            "table_cell", fontName="Cambria", fontSize=7.6,
+            textColor=C_TEXT_DARK, leading=9.8, alignment=TA_CENTER
         ),
         "table_cell_left": ParagraphStyle(
-            "table_cell_left", fontName="Cambria", fontSize=8,
-            textColor=C_TEXT_DARK, leading=10.5, alignment=TA_LEFT
+            "table_cell_left", fontName="Cambria", fontSize=7.6,
+            textColor=C_TEXT_DARK, leading=9.8, alignment=TA_LEFT
         ),
         "table_header": ParagraphStyle(
-            "table_header", fontName="Cambria-Bold", fontSize=8.2,
-            textColor=C_WHITE, leading=11, alignment=TA_CENTER
+            "table_header", fontName="Cambria-Bold", fontSize=7.8,
+            textColor=C_WHITE, leading=10, alignment=TA_CENTER
         ),
         "note": ParagraphStyle(
-            "note", fontName="Cambria", fontSize=7.8,
-            textColor=C_TEXT_MUTED, leading=10.8, alignment=TA_JUSTIFY,
-            leftIndent=0.4*cm, spaceAfter=3
+            "note", fontName="Cambria", fontSize=7.4,
+            textColor=C_TEXT_MUTED, leading=9.8, alignment=TA_JUSTIFY,
+            leftIndent=0.3*cm, spaceAfter=2
         ),
     }
 
 
 # ─── Utilitaires Graphiques et Tableaux ───────────────────────────────────────
-def divider(color=C_SECONDARY, thickness=0.8, space_before=2, space_after=3):
+def divider(color=C_SECONDARY, thickness=0.7, space_before=2, space_after=2.5):
     return HRFlowable(
         width="100%", thickness=thickness, color=color,
         spaceBefore=space_before, spaceAfter=space_after
@@ -146,7 +143,7 @@ def divider(color=C_SECONDARY, thickness=0.8, space_before=2, space_after=3):
 
 
 def academic_table(headers, data, col_widths, align_left_col0=False):
-    """Construit un tableau académique avec en-tête bleu marine et alternance de gris."""
+    """Construit un tableau académique dense et protégé contre les coupures."""
     styles = create_styles()
     f_headers = [Paragraph(f"<b>{h}</b>", styles["table_header"]) for h in headers]
     
@@ -164,20 +161,20 @@ def academic_table(headers, data, col_widths, align_left_col0=False):
         ("BACKGROUND", (0, 0), (-1, 0), C_PRIMARY),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3.5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3.5),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_BG_LIGHT]),
-        ("LINEBELOW", (0, 0), (-1, 0), 1.2, C_PRIMARY),
-        ("LINEBELOW", (0, -1), (-1, -1), 1.0, C_SECONDARY),
-        ("GRID", (0, 0), (-1, -1), 0.35, C_BORDER),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.0, C_PRIMARY),
+        ("LINEBELOW", (0, -1), (-1, -1), 0.8, C_SECONDARY),
+        ("GRID", (0, 0), (-1, -1), 0.3, C_BORDER),
     ]))
     return KeepTogether([t])
 
 
-def academic_fig(filename, caption_text, width=13.0*cm, height=6.0*cm):
-    """Génère un bloc image + légende protégé contre les sauts de page."""
+def academic_fig(filename, caption_text, width=12.0*cm, height=5.0*cm):
+    """Génère une figure seule avec légende dans un bloc compact."""
     styles = create_styles()
     fig_path = FIGURES_DIR / filename
     items = []
@@ -189,22 +186,48 @@ def academic_fig(filename, caption_text, width=13.0*cm, height=6.0*cm):
     return KeepTogether(items)
 
 
+def academic_fig_pair(file1, file2, caption_text, w=8.5*cm, h=4.2*cm):
+    """Affiche deux figures côte-à-côte dans une disposition double colonne élégante."""
+    styles = create_styles()
+    p1 = FIGURES_DIR / file1
+    p2 = FIGURES_DIR / file2
+    items = []
+    if p1.exists() and p2.exists():
+        img1 = Image(str(p1), width=w, height=h)
+        img2 = Image(str(p2), width=w, height=h)
+        pair_table = Table([[img1, img2]], colWidths=[8.7*cm, 8.7*cm])
+        pair_table.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 1),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        items.append(pair_table)
+        items.append(Paragraph(caption_text, styles["caption"]))
+    elif p1.exists():
+        items.append(Image(str(p1), width=12.0*cm, height=h*1.2))
+        items.append(Paragraph(caption_text, styles["caption"]))
+    return KeepTogether(items)
+
+
 # ─── En-têtes et Pieds de Page ───────────────────────────────────────────────
 def first_page_header(canvas, doc):
     canvas.saveState()
     canvas.setFillColor(C_PRIMARY)
-    canvas.rect(0, A4[1] - 0.9*cm, A4[0], 0.9*cm, fill=1, stroke=0)
+    canvas.rect(0, A4[1] - 0.8*cm, A4[0], 0.8*cm, fill=1, stroke=0)
     canvas.setFont("Cambria-Bold", 8)
     canvas.setFillColor(C_WHITE)
-    canvas.drawString(1.8*cm, A4[1] - 0.58*cm, "ARTICLE DE RECHERCHE SCIENTIFIQUE — SYSTÈMES ÉNERGÉTIQUES & MACHINE LEARNING")
-    canvas.drawRightString(A4[0] - 1.8*cm, A4[1] - 0.58*cm, "VERSION AMÉLIORÉE 1.0")
+    canvas.drawString(1.8*cm, A4[1] - 0.52*cm, "ARTICLE DE RECHERCHE SCIENTIFIQUE — SYSTÈMES ÉNERGÉTIQUES & MACHINE LEARNING")
+    canvas.drawRightString(A4[0] - 1.8*cm, A4[1] - 0.52*cm, "VERSION AMÉLIORÉE 1.0")
 
     canvas.setFillColor(C_SECONDARY)
-    canvas.rect(0, 0, A4[0], 0.65*cm, fill=1, stroke=0)
+    canvas.rect(0, 0, A4[0], 0.6*cm, fill=1, stroke=0)
     canvas.setFont("Cambria", 7.5)
     canvas.setFillColor(C_WHITE)
-    canvas.drawString(1.8*cm, 0.22*cm, "Rapport de Projet — Decision-Focused Probabilistic Forecasting for Microgrid EMS")
-    canvas.drawRightString(A4[0] - 1.8*cm, 0.22*cm, "Page 1")
+    canvas.drawString(1.8*cm, 0.2*cm, "Rapport de Projet — Decision-Focused Probabilistic Forecasting for Microgrid EMS")
+    canvas.drawRightString(A4[0] - 1.8*cm, 0.2*cm, "Page 1")
     canvas.restoreState()
 
 
@@ -212,31 +235,31 @@ def later_pages_header(canvas, doc):
     canvas.saveState()
     canvas.setStrokeColor(C_SECONDARY)
     canvas.setLineWidth(0.6)
-    canvas.line(1.8*cm, A4[1] - 1.1*cm, A4[0] - 1.8*cm, A4[1] - 1.1*cm)
+    canvas.line(1.8*cm, A4[1] - 1.0*cm, A4[0] - 1.8*cm, A4[1] - 1.0*cm)
 
     canvas.setFont("Cambria-Italic", 7.5)
     canvas.setFillColor(C_TEXT_MUTED)
-    canvas.drawString(1.8*cm, A4[1] - 0.92*cm, "Article 1 : Prévision Probabiliste Axée sur la Décision (TFT + SPO+ + TSRO)")
-    canvas.drawRightString(A4[0] - 1.8*cm, A4[1] - 0.92*cm, "Rapport Scientifique")
+    canvas.drawString(1.8*cm, A4[1] - 0.85*cm, "Article 1 : Prévision Probabiliste Axée sur la Décision (TFT + SPO+ + TSRO)")
+    canvas.drawRightString(A4[0] - 1.8*cm, A4[1] - 0.85*cm, "Rapport Scientifique")
 
     canvas.setStrokeColor(C_BORDER)
     canvas.setLineWidth(0.5)
-    canvas.line(1.8*cm, 1.0*cm, A4[0] - 1.8*cm, 1.0*cm)
+    canvas.line(1.8*cm, 0.9*cm, A4[0] - 1.8*cm, 0.9*cm)
     
     canvas.setFont("Cambria", 7.5)
     canvas.setFillColor(C_TEXT_MUTED)
-    canvas.drawString(1.8*cm, 0.55*cm, "Système de Gestion d'Énergie pour Microgrid (EMS) — Reproductibilité certifiée")
-    canvas.drawRightString(A4[0] - 1.8*cm, 0.55*cm, f"Page {doc.page}")
+    canvas.drawString(1.8*cm, 0.5*cm, "Système de Gestion d'Énergie pour Microgrid (EMS) — Reproductibilité certifiée")
+    canvas.drawRightString(A4[0] - 1.8*cm, 0.5*cm, f"Page {doc.page}")
     canvas.restoreState()
 
 
-# ─── Construction du Contenu Structuré ───────────────────────────────────────
+# ─── Construction du Contenu Continu ─────────────────────────────────────────
 def generate_story():
     S = create_styles()
     E = []
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 1 : EN-TÊTE, RÉSUMÉ & INTRODUCTION
+    # TITRAGE ET RÉSUMÉ SCIENTIFIQUE
     # ══════════════════════════════════════════════════════════════════════════
     E.append(Spacer(1, 2))
     E.append(Paragraph(
@@ -254,7 +277,7 @@ def generate_story():
         "Dépôt GitHub de Référence : github.com/rayanpr/Article1 &mdash; Novembre 2026",
         S["affiliation"]
     ))
-    E.append(divider(C_PRIMARY, 1.1, 0, 3))
+    E.append(divider(C_PRIMARY, 1.0, 0, 3))
 
     # Résumé
     E.append(Paragraph("<b>RÉSUMÉ</b>", S["h2"]))
@@ -283,9 +306,11 @@ def generate_story():
         "Column-and-Constraint Generation, Calibration Conforme, Regret Décisionnel.",
         S["keywords"]
     ))
-    E.append(divider(C_SECONDARY, 0.6, 1, 4))
+    E.append(divider(C_SECONDARY, 0.6, 1, 3))
 
-    # Section I
+    # ══════════════════════════════════════════════════════════════════════════
+    # I. INTRODUCTION ET CONTEXTE SCIENTIFIQUE
+    # ══════════════════════════════════════════════════════════════════════════
     E.append(Paragraph("I. Introduction et Contexte Scientifique", S["h1"]))
     E.append(Paragraph(
         "L'intégration massive des énergies renouvelables distribuées (solaire photovoltaïque, éolien) accentue "
@@ -299,7 +324,7 @@ def generate_story():
         "Traditionnellement, le problème est abordé via une démarche séquentielle : d'abord, un algorithme d'apprentissage "
         "supervisé prédit la charge brute et les prix spot ; ensuite, un solveur linéaire calcule le dispatch économique. "
         "Cependant, Elmachtoub et Grigas (2022) ont rigoureusement démontré que minimiser une perte purement statistique "
-        "peut conduire à des décisions économiques catastrophiques. Les erreurs commises durant les périodes de saturation "
+        "peut conduire à des décisions économiques sous-optimales. Les erreurs commises durant les périodes de saturation "
         "de la batterie ou lors des pics de tarification engendrent un surcoût opérationnel majeur, formalisé par le <b>regret décisionnel</b>.",
         S["body"]
     ))
@@ -330,9 +355,8 @@ def generate_story():
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 2 : MODÉLISATION PHYSIQUE ET FORMULATIONS EMS
+    # II. MODÉLISATION PHYSIQUE ET FORMULATIONS EMS
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
     E.append(Paragraph("II. Modélisation Physique et Formulations Mathématiques de l'EMS", S["h1"]))
     E.append(Paragraph(
         "Le microgrid fonctionne sur un horizon journalier <i>H</i> = 24 heures. "
@@ -364,7 +388,7 @@ def generate_story():
     ))
     E.append(Paragraph(
         "où <i>E</i><sup>min</sup> = &alpha; &middot; <i>E</i><sup>max</sup> (&alpha; = 0,10, seuil de décharge maximale admissible). "
-        "L'équation de bilan de puissance au point d'interconnexion (PCC) s'écrit avec l'import <i>g</i><sub><i>t</i></sub> &ge; 0 "
+        "L'équation de bilan de puissance au point d'interconnexion (PCC) relie l'import <i>g</i><sub><i>t</i></sub> &ge; 0 "
         "et l'export <i>x</i><sub><i>t</i></sub> &ge; 0 :",
         S["body"]
     ))
@@ -423,9 +447,8 @@ def generate_story():
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 3 : TSRO C&CG ET ANALYSE DE ROBUSTESSE
+    # III. TSRO C&CG ET ANALYSE DE ROBUSTESSE
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
     E.append(Paragraph("III. Optimisation Robuste Two-Stage via Column-and-Constraint Generation", S["h1"]))
     E.append(Paragraph(
         "Afin de garantir le fonctionnement ininterrompu du microgrid face aux aléas de prévision sans présumer "
@@ -465,18 +488,19 @@ def generate_story():
         S["body"]
     ))
 
-    # Figure 1 : TSRO budget sweep
-    E.append(academic_fig(
+    # Pair 1 : TSRO Budget Sweep + Lambda Sweep (Sensibilités de régularisation)
+    E.append(academic_fig_pair(
         "robustness_budget_sweep.png",
-        "Figure 1 : Analyse de sensibilité au budget de robustesse &Gamma; &isin; [0, 24] &mdash; "
-        "Trajectoire du coût opérationnel pire-cas sous l'algorithme TSRO C&amp;CG.",
-        width=12.8*cm, height=5.8*cm
+        "professional_lambda_sweep.png",
+        "Figure 1 : Analyses de sensibilité aux hyperparamètres &mdash; "
+        "(a) Coût opérationnel pire-cas sous TSRO en fonction du budget d'incertitude &Gamma; &isin; [0, 24] et "
+        "(b) Trajectoire du regret de validation en fonction du poids &lambda; &isin; {0.05, 0.10, 0.30} de la perte SPO+.",
+        w=8.4*cm, h=3.6*cm
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 4 : TFT QUANTILE ET COUPLAGE DÉCISIONNEL SPO+
+    # IV. MODÉLISATION PRÉVISIONNELLE PROBABILISTE (TFT)
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
     E.append(Paragraph("IV. Prévision Probabiliste Multivariée : Temporal Fusion Transformer", S["h1"]))
     E.append(Paragraph(
         "Le modèle prévisionnel déployé est un <b>Temporal Fusion Transformer</b> (Lim et al., 2021) "
@@ -510,14 +534,19 @@ def generate_story():
         S["equation"]
     ))
 
-    # Figure 2 : Fan Chart
-    E.append(academic_fig(
+    # Pair 2 : Fan Chart + Training Curves
+    E.append(academic_fig_pair(
         "forecast_fan_chart.png",
-        "Figure 2 : Trajectoires de prévision probabiliste générées par le modèle TFT &mdash; "
-        "Fan chart illustrant la médiane prédite et les intervalles de confiance 10 % &ndash; 90 % sur les fenêtres de test.",
-        width=12.8*cm, height=5.5*cm
+        "training_curves.png",
+        "Figure 2 : Apprentissage et prévision probabiliste &mdash; "
+        "(a) Trajectoires 24h avec médiane prédite et intervalles de confiance 10 % &ndash; 90 % (fan chart) et "
+        "(b) Convergence des pertes d'entraînement et de validation en Phase 1 (warm-up) et Phase 2 (SPO+).",
+        w=8.4*cm, h=3.8*cm
     ))
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # V. COUPLAGE DÉCISIONNEL SPO+ ET COUCHE CVXPYLAYERS
+    # ══════════════════════════════════════════════════════════════════════════
     E.append(Paragraph("V. Couplage Décisionnel SPO<sup>+</sup> et Couche Différentielle cvxpylayers", S["h1"]))
     E.append(Paragraph(
         "Soit <b>c</b> le vecteur des prix spot réels et <b>c&#770;</b> la prédiction issue du réseau. "
@@ -556,17 +585,8 @@ def generate_story():
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 5 : ENTRAÎNEMENT, DONNÉES ET PROTOCOLE
+    # VI. DONNÉES EXPÉRIMENTALES ET PROTOCOLE DE REPRODUCTIBILITÉ
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
-    # Figure 3 : Training Curves
-    E.append(academic_fig(
-        "training_curves.png",
-        "Figure 3 : Dynamique d'apprentissage du TFT &mdash; "
-        "Convergence de la perte composite d'entraînement et de la perte pinball de validation en Phase 1 (warm-up) et Phase 2 (SPO+).",
-        width=12.8*cm, height=5.2*cm
-    ))
-
     E.append(Paragraph("VI. Données Expérimentales et Protocole de Reproductibilité", S["h1"]))
     E.append(Paragraph(
         "L'étude s'appuie sur le jeu consolidé <code>dataset_2022.csv</code> représentant 8 760 heures annuelles "
@@ -584,22 +604,18 @@ def generate_story():
     E.append(academic_table(t3_headers, t3_rows, [4.0*cm, 5.0*cm, 2.7*cm, 5.5*cm], align_left_col0=True))
     E.append(Paragraph("Tableau 3 : Découpage chronologique étanche avec embargo de 24h entre les sous-ensembles.", S["caption"]))
 
-    # Figures 4 & 5
-    E.append(academic_fig(
+    # Pair 3 : EDA Splits + EDA Seasonal Profiles
+    E.append(academic_fig_pair(
         "eda_splits.png",
-        "Figure 4 : Répartition temporelle annuelle 2022 visualisant les sous-ensembles d'apprentissage, validation et test.",
-        width=12.8*cm, height=5.0*cm
-    ))
-    E.append(academic_fig(
         "eda_seasonal_profiles.png",
-        "Figure 5 : Profils horaires saisonniers moyens &mdash; Charge brute appelée, production solaire PV et prix spot d'achat.",
-        width=12.8*cm, height=5.0*cm
+        "Figure 3 : Analyse exploratoire des données (EDA) sur l'année 2022 &mdash; "
+        "(a) Répartition temporelle annuelle visualisant les embargos et (b) Profils horaires moyens par saison.",
+        w=8.4*cm, h=3.0*cm
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 6 : RÉSULTATS COMPARATIFS ET ANALYSE
+    # VII. RÉSULTATS EXPÉRIMENTAUX ET ANALYSES COMPARATIVES
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
     E.append(Paragraph("VII. Résultats Expérimentaux et Analyses Comparatives", S["h1"]))
     E.append(Paragraph(
         "Le Tableau 4 synthétise les métriques obtenues sur l'intégralité des 241 fenêtres journalières de test. "
@@ -632,32 +648,18 @@ def generate_story():
         S["body"]
     ))
 
-    # Figures 6 & 7
-    E.append(academic_fig(
+    # Pair 4 : Regret Comparison + Tradeoff Pareto
+    E.append(academic_fig_pair(
         "professional_regret_comparison.png",
-        "Figure 6 : Regret décisionnel moyen (%) par méthode &mdash; "
-        "Mise en évidence du gain significatif procuré par le modèle TFT+SPO+ exact cvxpylayers.",
-        width=12.8*cm, height=5.5*cm
-    ))
-    E.append(academic_fig(
         "professional_crps_regret_tradeoff.png",
-        "Figure 7 : Frontière de compromis statistique / économique (CRPS vs Regret) &mdash; "
-        "Le quadrant inférieur gauche représente la performance optimale conjointe.",
-        width=11.5*cm, height=5.2*cm
+        "Figure 4 : Évaluation économique et statistique sur les 241 fenêtres de test &mdash; "
+        "(a) Regret décisionnel moyen (%) par méthode et (b) Frontière de Pareto reliant CRPS prévisionnel et regret économique.",
+        w=8.4*cm, h=3.8*cm
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 7 : AMÉLIORATIONS V1.0, DISCUSSION ET CONCLUSION
+    # VIII. AMÉLIORATIONS TECHNIQUES MAJEURES (VERSION 1.0)
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
-    # Figure 8 : Lambda Sweep
-    E.append(academic_fig(
-        "professional_lambda_sweep.png",
-        "Figure 8 : Analyse de sensibilité au coefficient de couplage &lambda; &isin; {0.05, 0.10, 0.30} &mdash; "
-        "Trajectoire de convergence du regret de validation lors de la sélection du checkpoint.",
-        width=12.8*cm, height=5.2*cm
-    ))
-
     E.append(Paragraph("VIII. Améliorations Techniques de la Version 1.0", S["h1"]))
     E.append(Paragraph(
         "L'industrialisation du code a donné lieu à six extensions technologiques validées :",
@@ -683,6 +685,9 @@ def generate_story():
         S["body"]
     ))
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # IX. DISCUSSION, LIMITES ET PERSPECTIVES DE RECHERCHE
+    # ══════════════════════════════════════════════════════════════════════════
     E.append(Paragraph("IX. Discussion, Limites et Perspectives", S["h1"]))
     E.append(Paragraph(
         "Plusieurs prolongements prometteurs émergent de ces travaux :",
@@ -699,6 +704,9 @@ def generate_story():
         S["bullet"]
     ))
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # X. CONCLUSION
+    # ══════════════════════════════════════════════════════════════════════════
     E.append(Paragraph("X. Conclusion", S["h1"]))
     E.append(Paragraph(
         "Cette étude valide avec éclat le potentiel du paradigme <i>decision-focused learning</i> pour la gestion d'énergie. "
@@ -710,9 +718,9 @@ def generate_story():
     ))
 
     # ══════════════════════════════════════════════════════════════════════════
-    # PAGE 8 : RÉFÉRENCES ET ANNEXES
+    # RÉFÉRENCES BIBLIOGRAPHIQUES
     # ══════════════════════════════════════════════════════════════════════════
-    E.append(PageBreak())
+    E.append(Spacer(1, 3))
     E.append(Paragraph("Références Bibliographiques", S["h1"]))
     E.append(divider(C_PRIMARY, 0.8, 1, 3))
     
@@ -729,7 +737,10 @@ def generate_story():
     for r in refs:
         E.append(Paragraph(r, S["note"]))
 
-    E.append(Spacer(1, 4))
+    # ══════════════════════════════════════════════════════════════════════════
+    # ANNEXES : ARTEFACTS & HYPERPARAMÈTRES
+    # ══════════════════════════════════════════════════════════════════════════
+    E.append(Spacer(1, 3))
     E.append(Paragraph("Annexe A : Inventaire des Artefacts et Chemins du Dépôt", S["h1"]))
     t6_headers = ["Composant Logiciel", "Emplacement dans le Projet", "Description Fonctionnelle"]
     t6_rows = [
@@ -745,7 +756,7 @@ def generate_story():
     E.append(academic_table(t6_headers, t6_rows, [3.8*cm, 5.6*cm, 7.8*cm], align_left_col0=True))
     E.append(Paragraph("Tableau 6 : Répertoire complet des fichiers et modèles générés.", S["caption"]))
 
-    E.append(Spacer(1, 3))
+    E.append(Spacer(1, 2.5))
     E.append(Paragraph("Annexe B : Configuration Exhaustive des Hyperparamètres", S["h1"]))
     t7_headers = ["Hyperparamètre", "Valeur Retenue", "Rôle Algorithmique & Justification"]
     t7_rows = [
@@ -773,8 +784,8 @@ def main():
     doc = SimpleDocTemplate(
         str(OUTPUT_PATH),
         pagesize=A4,
-        topMargin=1.5*cm,
-        bottomMargin=1.3*cm,
+        topMargin=1.4*cm,
+        bottomMargin=1.2*cm,
         leftMargin=1.8*cm,
         rightMargin=1.8*cm,
         title="Decision-Focused Probabilistic Forecasting for Microgrid EMS",
